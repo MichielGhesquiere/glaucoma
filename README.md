@@ -1,116 +1,61 @@
-# Deep Learning for Glaucoma: Detection, Segmentation, Progression Monitoring, and Fairness Analysis
+# Glaucoma Classification Research
 
-## Table of Contents
+This repository contains code to train and evaluate deep learning classifiers for glaucoma detection from retinal fundus photographs. The goal is to build **generalisable and fair** models that perform well across different cameras and demographic groups. Training uses a mixture of open–source datasets and evaluation is performed on both in–distribution (ID) and out–of–distribution (OOD) test sets.
 
-1.  [Introduction](#introduction)
-2.  [Project Goals](#project-goals)
-3.  [Core Tasks](#core-tasks)
-4.  [Project Structure](#project-structure)
-5.  [Datasets](#datasets)
-6.  [Setup and Installation](#setup-and-installation)
-7.  [Configuration](#configuration)
-8.  [Usage](#usage)
-    *   [1. Data Preprocessing](#1-data-preprocessing)
-    *   [2. Training Models](#2-training-models)
-    *   [3. Feature Extraction (for Progression)](#3-feature-extraction-for-progression)
-    *   [4. Training Progression Model](#4-training-progression-model)
-    *   [5. Evaluation](#5-evaluation)
-    *   [6. Visualization](#6-visualization)
-9.  [Models](#models)
-10. [Evaluation Metrics](#evaluation-metrics)
-11. [Fairness Analysis](#fairness-analysis)
-12. [Results](#results)
-13. [Future Work](#future-work)
-14. [Contributing](#contributing)
-15. [License](#license)
-16. [Acknowledgements](#acknowledgements)
+## Overview
+- **train\_classification.py** implements the main training pipeline. It supports loading images and metadata from SMDG-19, CHAKSU and AIROGS. Vision models from the [timm](https://github.com/huggingface/pytorch-image-models) library are used and training options include MixUp, label smoothing and temperature scaling.
+- **evaluate\_id.py** and **evaluate\_ood.py** run inference on ID and several external datasets (e.g. PAPILLA, ACRIMA, HYGD, OIA-ODIR). Results include ROC curves and calibration plots.
+- Fairness metrics (TPR/FPR parity and underdiagnosis disparity) are computed via functions in `src/evaluation/fairness.py`.
 
-## Introduction
+The directory layout roughly matches the structure described in [`project_structure.md`](project_structure.md). Core utilities live under `src/`.
 
-Glaucoma is a leading cause of irreversible blindness worldwide. It is a progressive optic neuropathy characterized by damage to the optic nerve head (ONH) and corresponding visual field loss. Early detection and continuous monitoring are crucial for managing the disease and preventing severe vision impairment. Fundus photography is a common imaging modality used in glaucoma screening and management.
-
-This project aims to develop and evaluate deep learning models for various tasks related to glaucoma analysis using retinal fundus images. It focuses on:
-
-*   **Automated Detection:** Classifying images as glaucomatous or normal.
-*   **Quantitative Analysis:** Segmenting key anatomical structures like the Optic Disc (OD) and Optic Cup (OC) to derive clinically relevant biomarkers (e.g., Cup-to-Disc Ratio - CDR).
-*   **Progression Monitoring:** Analyzing longitudinal sequences of fundus images to detect or predict disease progression over time.
-*   **Responsible AI:** Assessing the fairness of developed models across different demographic groups (e.g., based on sex or age) where data is available.
-
-The codebase is structured for modularity and reproducibility, facilitating research and experimentation with different models and datasets.
-
-## Project Goals
-
-*   Implement robust pipelines for glaucoma classification, segmentation, and progression feature extraction.
-*   Utilize and process multiple open-source fundus image datasets.
-*   Train and evaluate deep learning models (CNNs like ResNet, U-Net) for the defined tasks.
-*   Develop methods for longitudinal analysis based on derived metrics from segmentation.
-*   Incorporate fairness evaluation into the model assessment workflow.
-*   Provide a structured and reusable codebase for glaucoma research.
-
-## Core Tasks
-
-This project implements the following core functionalities:
-
-1.  **Glaucoma Classification:** Binary classification of fundus images into 'Normal' (0) and 'Glaucoma' (1).
-2.  **Optic Disc & Cup Segmentation:** Multi-task segmentation using a U-Net architecture to delineate the OD and OC boundaries simultaneously.
-3.  **Longitudinal Feature Extraction:** Processing sequences of images for individual subjects/eyes, performing segmentation (using a trained model or mock data), calculating clinically relevant metrics (CDR, ISNT rule, areas, etc.) using `src.features.metrics.GlaucomaMetrics`, and summarizing changes over time.
-4.  **Progression Prediction:** Training models (e.g., RandomForest) on the extracted longitudinal features to predict clinical progression status.
-5.  **Fairness Assessment:** Evaluating classification/progression models for performance disparities across specified sensitive attribute groups (e.g., sex, age bins) using metrics like Equalized Odds and Demographic Parity.
-
-## Project Structure
-
-The project follows a standard machine learning project structure:
-
-```
-glaucoma_research_project/
-├── configs/                  # Configuration files (YAML) for paths, HPs, models
-├── data/                     # Raw and processed data (managed separately if large)
-│   ├── raw/                  # Original downloaded datasets
-│   └── processed/            # Processed metadata, features, etc.
-├── logs/                     # Log files generated by scripts
-├── models/                   # Saved trained models (e.g., .joblib for sklearn)
-├── notebooks/                # Jupyter notebooks for EDA, visualization, experiments
-├── results/                  # Saved evaluation metrics (JSON), plots (PNG), etc.
-├── scripts/                  # Executable Python scripts for workflows
-│   ├── preprocess_data.py    # Loads & preprocesses raw data
-│   ├── train_classification.py # Trains classification model
-│   ├── train_segmentation.py   # Trains segmentation model
-│   ├── extract_features.py     # Runs segmentation & extracts metrics for progression
-│   ├── train_progression.py    # Trains progression model on features
-│   ├── evaluate_model.py       # Evaluates trained models
-│   └── run_visualization.py    # Generates specific plots
-│
-├── src/                      # Source code modules
-│   ├── data/                 # Data loading, Dataset classes, transforms
-│   ├── evaluation/           # Evaluation metric functions (standard & fairness)
-│   ├── features/             # Feature calculation (GlaucomaMetrics), feature building
-│   ├── models/               # Model architecture definitions (ResNet, UNet, RF)
-│   ├── training/             # Training loops, loss functions
-│   ├── analysis/             # Progression analysis logic (placeholder)
-│   └── utils/                # Utilities (config loading, logging, plotting, file ops)
-│
-├── tests/                    # Unit and integration tests (TODO)
-├── .gitignore                # Git ignore configuration
-├── LICENSE                   # Project license file (e.g., MIT) - Choose one!
-├── README.md                 # This file
-└── requirements.txt          # Python package dependencies
-```
+## Installation
+1. Create a Python environment (Python 3.9+ recommended).
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Download the datasets (see below) into `data/raw/` following the subdirectory scheme used by the scripts.
 
 ## Datasets
+Training and evaluation rely on several publicly available datasets. The main ones are:
+- **SMDG-19** – images with glaucoma labels and segmentations.
+- **CHAKSU** – multi-camera dataset used for training and OOD evaluation.
+- **AIROGS** – large dataset of labelled fundus images.
+- **PAPILLA**, **ACRIMA**, **HYGD**, **OIA-ODIR** – used only for external testing.
 
-This project is designed to work with multiple open-source datasets. The initial implementation includes support for loading and preprocessing:
+Actual image files are **not** included in the repository. Place them under `data/raw/<dataset>/` and adjust paths when running the scripts.
 
-*   **GRAPE:** Longitudinal dataset with clinical progression labels. ([Link or Reference if available]) - Used for progression monitoring.
-*   **SMDG-19:** Contains fundus images with OD/OC segmentations and glaucoma labels. ([Link or Reference]) - Used for segmentation and classification.
-*   **AIROGS:** Large dataset for glaucoma classification. ([Link or Reference]) - Used for classification.
-*   **(Add others as needed)**
+## Training Example
+```bash
+python scripts/train_classification.py \
+    --base_data_root /path/to/data \
+    --smdg_metadata_file data/raw/SMDG-19/metadata - standardized.csv \
+    --smdg_image_dir data/raw/SMDG-19/full-fundus/full-fundus
+```
+Additional arguments control model type, augmentation and domain-adversarial settings. See `scripts/train_classification.py` for a full list.
 
-**Note:** Raw dataset files are typically large and are **not** included in this repository. You need to download them separately and place them in the `data/raw/` directory according to the expected structure (e.g., `data/raw/GRAPE/`, `data/raw/SMDG-19/`). Update the paths in `configs/data_paths.yaml` accordingly.
+## Evaluating
+To evaluate the best checkpoint on the held-out ID test set:
+```bash
+python scripts/evaluate_id.py --experiment_dir /path/to/run
+```
+For external datasets:
+```bash
+python scripts/evaluate_ood.py --experiment_parent_dir /path/to/runs
+```
+Evaluation summaries are saved in each experiment folder.
 
-## Models
+## Fairness Analysis
+Performance by subgroups (age, sex, camera type, etc.) is analysed through `src/evaluation/fairness.py`. The `calculate_underdiagnosis_disparities` function reports false negative and false positive rate gaps between favoured and disfavoured groups.
 
-The following model architectures are implemented:
+```python
+# src/evaluation/fairness.py
+"""
+Calculates FNR and FPR disparities between specified subgroups.
+"""
+```
 
-*   **Classification:** ResNet-50 (`src.models.classification.resnet`) with a modified final layer, leveraging pretrained ImageNet weights.
-*   **Segmentation:** Multi-task U-Net (`src.models.segmentation.unet`) with a shared encoder and separate decoders for Optic Cup and Optic Disc segmentation. Supports bilinear upsampling or transpose convolutions.
-*   **Progression:** Currently uses Scikit-learn's RandomForestClassifier (`src.models.progression.basic_rf`) as a baseline, trained on extracted features. Can be extended with sequence models (RNNs, LSTMs, Transformers) acting directly on images or features.
+## License
+This project is released under the MIT License.
+
