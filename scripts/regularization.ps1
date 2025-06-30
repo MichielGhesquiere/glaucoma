@@ -9,7 +9,7 @@ Write-Host "======================================================"
 $PYTHON_EXE = "python" 
 $SCRIPT_PATH = ".\train_classification.py"
 
-$DATA_TYPE_TO_USE = "processed" # Should be "raw" or "processed"
+$DATA_TYPE_TO_USE = "raw" # Should be "raw" or "processed"
 Write-Host "Using data_type: $DATA_TYPE_TO_USE" -ForegroundColor Magenta
 
 $BASE_DATA_ROOT = "D:\glaucoma\data" 
@@ -25,7 +25,7 @@ $AIROGS_IMAGE_DIR = "D:\glaucoma\data\raw\AIROGS\img"
 
 # Output Directory
 $Timestamp = Get-Date -Format "yyyyMMdd_HHmm"
-$BASE_OUTPUT_DIR = "experiments\multi_model_regularization_study_dtype_${DATA_TYPE_TO_USE}_${Timestamp}"
+$BASE_OUTPUT_DIR = "experiments\multi_model_regularization_study_dtype_${DATA_TYPE_TO_USE}"
 
 # Training Hyperparameters
 $NUM_EPOCHS = 60 

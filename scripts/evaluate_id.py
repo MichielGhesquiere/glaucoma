@@ -1099,7 +1099,7 @@ if __name__ == "__main__":
     parser.add_argument('--parent_experiment_dir', type=str, required=True, help="Path to single experiment or parent of multiple experiment runs.")
     
     # NEW: Add data_type argument
-    parser.add_argument('--data_type', type=str, choices=['raw', 'processed'], default='processed',
+    parser.add_argument('--data_type', type=str, choices=['raw', 'processed'], default='raw',
                        help="Type of data to use for evaluation: 'raw' or 'processed'")
     
     parser.add_argument('--fallback_model_name', type=str, default='vit_base_patch16_224', help="Fallback model name.")

@@ -8,7 +8,7 @@ This script evaluates pre-trained model(s) from a parent experiment directory
 on specified external OOD (Out-of-Distribution) test datasets.
 It performs the following main steps:
 1.  Discovers trained model checkpoints based on a configuration list.
-2.  Loads necessary external test datasets (e.g., PAPILLA, CHAKSU, OIA-ODIR-test).
+2.  Loads necessary external test datasets (e.g., PAPILLA, CHAKSU).
 3.  For each discovered model:
     a.  Builds the model architecture using parameters from its original training run,
         correctly identifying if a sequential head structure is needed.
@@ -81,14 +81,109 @@ log_formatter = logging.Formatter(
 stream_handler.setFormatter(log_formatter)
 logger.addHandler(stream_handler)
 
-DEFAULT_MODELS_TO_EVALUATE = [
-    {"ModelNameInTraining": "dinov2_vitb14", "TrainingModelShortName": "d2_vitb14", "TrainingTag": "DINOv2", "TrainingDropout": 0.3},
-    {"ModelNameInTraining": "vit_base_patch16_224", "TrainingModelShortName": "vit", "TrainingTag": "VFM_custom", "TrainingDropout": 0.3},
-    {"ModelNameInTraining": "vit_base_patch16_224", "TrainingModelShortName": "vit", "TrainingTag": "Reg2Class", "TrainingDropout": 0.3},  # Add this line
-    {"ModelNameInTraining": "convnext_base", "TrainingModelShortName": "convnext", "TrainingTag": "ConvNeXtBase_timm", "TrainingDropout": 0.3},
-    {"ModelNameInTraining": "resnet50", "TrainingModelShortName": "resnet50", "TrainingTag": "ResNet50_timm", "TrainingDropout": 0.3},
-    {"ModelNameInTraining": "vit_base_patch16_224", "TrainingModelShortName": "vit", "TrainingTag": "ViTBase_timm", "TrainingDropout": 0.3}
-]
+def discover_models_from_experiment_dir(experiment_parent_dir: str, data_type_suffix: str = "raw") -> list[dict]:
+    """
+    Automatically discovers trained models from the experiment parent directory.
+    
+    Args:
+        experiment_parent_dir: Path to the parent directory containing experiment folders
+        data_type_suffix: Data type suffix used in directory names (e.g., "raw", "processed")
+    
+    Returns:
+        List of dictionaries containing model information for each discovered model
+    """
+    logger.info(f"Auto-discovering models from: {experiment_parent_dir}")
+    
+    # Model architecture mappings
+    ARCH_MAPPINGS = {
+        'vit': 'vit_base_patch16_224',
+        'dinov2': 'dinov2_vitb14', 
+        'd2': 'dinov2_vitb14',
+        'resnet50': 'resnet50',
+        'convnext': 'convnext_base',
+        'efficientnet': 'efficientnet_b0'  # Add more as needed
+    }
+    
+    if not os.path.isdir(experiment_parent_dir):
+        logger.warning(f"Experiment parent directory not found: {experiment_parent_dir}")
+        return []
+    
+    discovered_models = []
+    
+    # Pattern to match experiment directories
+    # Expected format: {model_short}_{data_type}_{training_tag}_{timestamp}
+    pattern = f"*_{data_type_suffix}_*"
+    experiment_dirs = glob.glob(os.path.join(experiment_parent_dir, pattern))
+    
+    for exp_dir in experiment_dirs:
+        dir_name = os.path.basename(exp_dir)
+        logger.info(f"Processing experiment directory: {dir_name}")
+        
+        # Check if checkpoints directory exists
+        checkpoint_dir = os.path.join(exp_dir, "checkpoints")
+        if not os.path.isdir(checkpoint_dir):
+            logger.warning(f"No checkpoints directory found in: {dir_name}")
+            continue
+            
+        # Check if any .pth files exist
+        pth_files = glob.glob(os.path.join(checkpoint_dir, "*.pth"))
+        if not pth_files:
+            logger.warning(f"No .pth checkpoint files found in: {checkpoint_dir}")
+            continue
+        
+        # Parse directory name to extract model info
+        # Expected format: {model_short}_{data_type}_{training_components}_{timestamp}
+        parts = dir_name.split('_')
+        if len(parts) < 3:
+            logger.warning(f"Directory name format not recognized: {dir_name}")
+            continue
+            
+        model_short = parts[0].lower()
+        
+        # Map short name to full architecture name
+        model_arch_name = None
+        for short_key, full_arch in ARCH_MAPPINGS.items():
+            if model_short.startswith(short_key):
+                model_arch_name = full_arch
+                break
+        
+        if not model_arch_name:
+            logger.warning(f"Could not map model short name '{model_short}' to architecture")
+            continue
+        
+        # Extract training tag (everything between data_type and timestamp)
+        # Remove the model_short and data_type_suffix from the beginning
+        remaining_parts = parts[2:]  # Skip model_short and data_type_suffix
+        
+        # The last part is typically a timestamp, so exclude it for training tag
+        if len(remaining_parts) > 1 and re.match(r'\d{8}_\d{6}', remaining_parts[-1]):
+            training_tag_parts = remaining_parts[:-1]
+        else:
+            training_tag_parts = remaining_parts
+            
+        training_tag = '_'.join(training_tag_parts) if training_tag_parts else "Unknown"
+        
+        # Extract dropout from directory name if present
+        dropout_prob = 0.3  # default
+        dropout_match = re.search(r'Dropout([\d.]+)', dir_name, re.IGNORECASE)
+        if dropout_match:
+            dropout_prob = float(dropout_match.group(1))
+        
+        # Create model configuration
+        model_config = {
+            "ModelNameInTraining": model_arch_name,
+            "TrainingModelShortName": model_short,
+            "TrainingTag": training_tag,
+            "TrainingDropout": dropout_prob,
+            "experiment_dir": exp_dir,
+            "checkpoint_dir": checkpoint_dir
+        }
+        
+        discovered_models.append(model_config)
+        logger.info(f"Discovered model: {model_short} -> {model_arch_name}, Tag: {training_tag}, Dropout: {dropout_prob}")
+    
+    logger.info(f"Total models discovered: {len(discovered_models)}")
+    return discovered_models
 
 def find_model_checkpoint_path(base_dir: str, dir_pattern: str, model_id_for_log: str) -> tuple[str | None, str | None]:
     """
@@ -441,22 +536,46 @@ def main(args: argparse.Namespace):
     logger.info(f"Using PyTorch device: {device}")
     logger.info(f"Base data root for external datasets: {os.path.abspath(args.base_data_root)}")
 
+    # Infer the data type suffix used in directory names
     training_run_data_type_suffix = "raw"
-    if "processed" in os.path.basename(args.experiment_parent_dir).lower():
-        training_run_data_type_suffix = "processed"
+    parent_dir_name = os.path.basename(args.experiment_parent_dir).lower()
+    if "processed" in parent_dir_name or "proc" in parent_dir_name:
+        # Check what suffix is actually used in the directory names
+        experiment_dirs = glob.glob(os.path.join(args.experiment_parent_dir, "*"))
+        experiment_dir_names = [os.path.basename(d) for d in experiment_dirs if os.path.isdir(d)]
+        
+        # Look for common patterns
+        if any("_proc_" in name for name in experiment_dir_names):
+            training_run_data_type_suffix = "proc"
+        elif any("_processed_" in name for name in experiment_dir_names):
+            training_run_data_type_suffix = "processed"
+        else:
+            training_run_data_type_suffix = "processed"  # default fallback
+            
     logger.info(f"Inferred training data type suffix for directory search: '{training_run_data_type_suffix}'")
 
-    models_to_evaluate_config = DEFAULT_MODELS_TO_EVALUATE
+    # Auto-discover models or use provided configuration
     if args.model_config_list:
         try:
             if os.path.exists(args.model_config_list):
-                with open(args.model_config_list, 'r') as f: models_to_evaluate_config = json.load(f)
+                with open(args.model_config_list, 'r') as f: 
+                    models_to_evaluate_config = json.load(f)
                 logger.info(f"Loaded model configurations from JSON file: {args.model_config_list}")
             else:
                 models_to_evaluate_config = json.loads(args.model_config_list)
                 logger.info("Loaded model configurations from JSON string argument.")
         except Exception as e:
             logger.critical(f"Error processing --model_config_list '{args.model_config_list}': {e}. Exiting.", exc_info=True)
+            logger.removeHandler(main_file_handler); main_file_handler.close(); sys.exit(1)
+    else:
+        # Auto-discover models from experiment parent directory
+        logger.info("No --model_config_list provided. Auto-discovering models from experiment directory...")
+        models_to_evaluate_config = discover_models_from_experiment_dir(
+            args.experiment_parent_dir, 
+            training_run_data_type_suffix
+        )
+        if not models_to_evaluate_config:
+            logger.critical("No models discovered and no model config provided. Exiting.")
             logger.removeHandler(main_file_handler); main_file_handler.close(); sys.exit(1)
 
     with open(os.path.join(eval_output_dir, "evaluation_run_config.json"), "w") as f_cfg:
@@ -472,12 +591,57 @@ def main(args: argparse.Namespace):
             logger.warning(f"Skipping malformed model config: {model_config_entry}. Missing: {', '.join(k for k in required_keys if k not in model_config_entry)}")
             continue
         
-        dir_search_pattern = f"{model_config_entry['TrainingModelShortName']}_{training_run_data_type_suffix}_{model_config_entry['TrainingTag']}*"
         model_id_for_log = f"{model_config_entry['TrainingModelShortName']}-{model_config_entry['TrainingTag']}"
         
-        checkpoint_file_path, full_experiment_dir_path = find_model_checkpoint_path(
-            args.experiment_parent_dir, dir_search_pattern, model_id_for_log
-        )
+        # Check if we have the experiment directory directly (from auto-discovery)
+        if 'experiment_dir' in model_config_entry and 'checkpoint_dir' in model_config_entry:
+            full_experiment_dir_path = model_config_entry['experiment_dir']
+            checkpoint_dir = model_config_entry['checkpoint_dir']
+            
+            logger.info(f"Using discovered experiment directory for '{model_id_for_log}': {full_experiment_dir_path}")
+            
+            # Find the best checkpoint in the directory
+            checkpoint_file = None
+            best_checkpoints = glob.glob(os.path.join(checkpoint_dir, "*_best_model_epoch*.pth"))
+            best_checkpoints_sorted = sorted(
+                best_checkpoints,
+                key=lambda x: int(m.group(1)) if (m := re.search(r'_epoch(\d+)\.pth$', os.path.basename(x))) else -1,
+                reverse=True
+            )
+            if best_checkpoints_sorted:
+                checkpoint_file = best_checkpoints_sorted[0]
+                logger.info(f"Selected 'best_model' checkpoint (highest epoch): {os.path.basename(checkpoint_file)}")
+            else:
+                logger.warning(f"No '*_best_model_epoch*.pth' checkpoint found for model {model_id_for_log} in {checkpoint_dir}.")
+                final_epoch_checkpoints = glob.glob(os.path.join(checkpoint_dir, "*_final_epoch*.pth"))
+                final_epoch_checkpoints_sorted = sorted(
+                    final_epoch_checkpoints,
+                    key=lambda x: int(m.group(1)) if (m := re.search(r'_epoch(\d+)\.pth$', os.path.basename(x))) else -1,
+                    reverse=True
+                )
+                if final_epoch_checkpoints_sorted:
+                    checkpoint_file = final_epoch_checkpoints_sorted[0]
+                    logger.info(f"Falling back to 'final_epoch' checkpoint (highest epoch): {os.path.basename(checkpoint_file)}")
+                else:
+                    logger.warning(f"No '*_final_epoch*.pth' checkpoint found for model {model_id_for_log} in {checkpoint_dir}.")
+                    all_pth_files = glob.glob(os.path.join(checkpoint_dir, "*.pth"))
+                    if all_pth_files:
+                        checkpoint_file = max(all_pth_files, key=os.path.getmtime)
+                        logger.info(f"Falling back to latest modified checkpoint: {os.path.basename(checkpoint_file)}")
+            
+            if checkpoint_file:
+                checkpoint_file_path = checkpoint_file
+            else:
+                logger.warning(f"No suitable checkpoint file found for {model_id_for_log} in '{checkpoint_dir}'. Skipping.")
+                continue
+        else:
+            # Use the old method for manually specified configurations
+            dir_search_pattern = f"{model_config_entry['TrainingModelShortName']}_{training_run_data_type_suffix}_{model_config_entry['TrainingTag']}*"
+            
+            checkpoint_file_path, full_experiment_dir_path = find_model_checkpoint_path(
+                args.experiment_parent_dir, dir_search_pattern, model_id_for_log
+            )
+        
         if checkpoint_file_path and full_experiment_dir_path:
             all_discovered_checkpoints_info.append({
                 "model_arch_name": model_config_entry['ModelNameInTraining'],
@@ -514,7 +678,6 @@ def main(args: argparse.Namespace):
         raw_dir_name=RAW_DIR_NAME_CONST,
         processed_dir_name=PROCESSED_DIR_NAME_CONST,
         eval_papilla=args.eval_papilla,
-        eval_oiaodir_test=args.eval_oiaodir_test,
         eval_chaksu=args.eval_chaksu,
         eval_acrima=args.eval_acrima,  # NEW
         eval_hygd=args.eval_hygd,      # NEW
@@ -610,7 +773,7 @@ def main(args: argparse.Namespace):
             attributes_for_dataloader = list(set(['dataset_source', 'image_path', 'types'] + \
                                             [attr for attr in args.tsne_attributes_to_visualize if attr in df_test.columns]))
             subgroup_attributes_for_run_eval = []
-            if test_set_name == "PAPILLA" or "OIA-ODIR" in test_set_name:
+            if test_set_name == "PAPILLA":
                 if 'age' in df_test.columns: subgroup_attributes_for_run_eval.append('age')
                 if 'eye' in df_test.columns: subgroup_attributes_for_run_eval.append('eye')
             elif test_set_name == "CHAKSU":
@@ -765,7 +928,7 @@ if __name__ == "__main__":
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument('--experiment_parent_dir', type=str, required=True, help="Path to parent directory of model experiment folders.")
-    parser.add_argument('--model_config_list', type=str, default=None, help="JSON string or path to JSON file defining models to evaluate.")
+    parser.add_argument('--model_config_list', type=str, default=None, help="Optional JSON string or path to JSON file defining specific models to evaluate. If not provided, models will be auto-discovered from the experiment directory.")
     parser.add_argument('--output_dir_suffix', type=str, default=None, help="Optional suffix for the main OOD evaluation output directory.")
     
     model_load_group = parser.add_argument_group("Model Loading Parameters")
@@ -790,7 +953,6 @@ if __name__ == "__main__":
 
     eval_set_group = parser.add_argument_group("OOD Set Selection")
     eval_set_group.add_argument('--eval_papilla', action=argparse.BooleanOptionalAction, default=True)
-    eval_set_group.add_argument('--eval_oiaodir_test', action=argparse.BooleanOptionalAction, default=False)
     eval_set_group.add_argument('--eval_chaksu', action=argparse.BooleanOptionalAction, default=True)
     eval_set_group.add_argument('--eval_acrima', action=argparse.BooleanOptionalAction, default=True)
     eval_set_group.add_argument('--eval_hygd', action=argparse.BooleanOptionalAction, default=True)

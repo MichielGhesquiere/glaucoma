@@ -1,0 +1,421 @@
+[
+    {
+        "dataset_name": "SMDG-BEH",
+        "split": "all",
+        "total_samples": 634,
+        "glaucoma_positive": 171,
+        "glaucoma_negative": 463,
+        "glaucoma_prevalence": 0.2697160883280757,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": NaN,
+        "age_std": NaN,
+        "unique_eyes": [
+            NaN
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-CRFO",
+        "split": "all",
+        "total_samples": 79,
+        "glaucoma_positive": 48,
+        "glaucoma_negative": 31,
+        "glaucoma_prevalence": 0.6075949367088608,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": NaN,
+        "age_std": NaN,
+        "unique_eyes": [
+            "OS",
+            "OD"
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-DR-HAGIS",
+        "split": "all",
+        "total_samples": 10,
+        "glaucoma_positive": 10,
+        "glaucoma_negative": 0,
+        "glaucoma_prevalence": 1.0,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": NaN,
+        "age_std": NaN,
+        "unique_eyes": [
+            NaN
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-DRISHTI-GS1",
+        "split": "all",
+        "total_samples": 101,
+        "glaucoma_positive": 70,
+        "glaucoma_negative": 31,
+        "glaucoma_prevalence": 0.693069306930693,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": NaN,
+        "age_std": NaN,
+        "unique_eyes": [
+            NaN
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-FIVES",
+        "split": "all",
+        "total_samples": 400,
+        "glaucoma_positive": 150,
+        "glaucoma_negative": 250,
+        "glaucoma_prevalence": 0.375,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": NaN,
+        "age_std": NaN,
+        "unique_eyes": [
+            NaN
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-G1020",
+        "split": "all",
+        "total_samples": 1020,
+        "glaucoma_positive": 296,
+        "glaucoma_negative": 724,
+        "glaucoma_prevalence": 0.2901960784313726,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": NaN,
+        "age_std": NaN,
+        "unique_eyes": [
+            NaN
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-HRF",
+        "split": "all",
+        "total_samples": 30,
+        "glaucoma_positive": 15,
+        "glaucoma_negative": 15,
+        "glaucoma_prevalence": 0.5,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": NaN,
+        "age_std": NaN,
+        "unique_eyes": [
+            NaN
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-JSIEC",
+        "split": "all",
+        "total_samples": 38,
+        "glaucoma_positive": 0,
+        "glaucoma_negative": 38,
+        "glaucoma_prevalence": 0.0,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": NaN,
+        "age_std": NaN,
+        "unique_eyes": [
+            NaN
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-LES-AV",
+        "split": "all",
+        "total_samples": 22,
+        "glaucoma_positive": 11,
+        "glaucoma_negative": 11,
+        "glaucoma_prevalence": 0.5,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": 71.36363636363636,
+        "age_std": 9.978765333234247,
+        "unique_eyes": [
+            "OD",
+            "OS"
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-OIA-ODIR-test",
+        "split": "all",
+        "total_samples": 1313,
+        "glaucoma_positive": 94,
+        "glaucoma_negative": 1219,
+        "glaucoma_prevalence": 0.0715917745620716,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": 56.58492003046459,
+        "age_std": 11.663628497953141,
+        "unique_eyes": [
+            "OD",
+            "OS"
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-OIA-ODIR-train",
+        "split": "all",
+        "total_samples": 3129,
+        "glaucoma_positive": 197,
+        "glaucoma_negative": 2932,
+        "glaucoma_prevalence": 0.06295941195270055,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": 57.27708533077661,
+        "age_std": 11.319877711339672,
+        "unique_eyes": [
+            "OD",
+            "OS"
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-ORIGA",
+        "split": "all",
+        "total_samples": 650,
+        "glaucoma_positive": 168,
+        "glaucoma_negative": 482,
+        "glaucoma_prevalence": 0.25846153846153846,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": NaN,
+        "age_std": NaN,
+        "unique_eyes": [
+            "OD",
+            "OS"
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-PAPILA",
+        "split": "all",
+        "total_samples": 420,
+        "glaucoma_positive": 87,
+        "glaucoma_negative": 333,
+        "glaucoma_prevalence": 0.20714285714285716,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": 61.1,
+        "age_std": 12.811260709026815,
+        "unique_eyes": [
+            "OD",
+            "OS"
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-REFUGE1",
+        "split": "all",
+        "total_samples": 800,
+        "glaucoma_positive": 80,
+        "glaucoma_negative": 720,
+        "glaucoma_prevalence": 0.1,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": NaN,
+        "age_std": NaN,
+        "unique_eyes": [
+            NaN
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-SMDG_Unknown",
+        "split": "all",
+        "total_samples": 3269,
+        "glaucoma_positive": 3269,
+        "glaucoma_negative": 0,
+        "glaucoma_prevalence": 1.0,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": NaN,
+        "age_std": NaN,
+        "unique_eyes": [
+            NaN
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "SMDG-sjchoi86-HRF",
+        "split": "all",
+        "total_samples": 401,
+        "glaucoma_positive": 101,
+        "glaucoma_negative": 300,
+        "glaucoma_prevalence": 0.2518703241895262,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": NaN,
+        "age_std": NaN,
+        "unique_eyes": [
+            NaN
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "AIROGS",
+        "split": "all",
+        "total_samples": 6000,
+        "glaucoma_positive": 3000,
+        "glaucoma_negative": 3000,
+        "glaucoma_prevalence": 0.5,
+        "missing_labels": 0,
+        "has_age": false,
+        "has_eye": false,
+        "has_camera": false,
+        "age_mean": null,
+        "age_std": null,
+        "unique_eyes": null,
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "PAPILLA",
+        "split": "test",
+        "total_samples": 488,
+        "glaucoma_positive": 87,
+        "glaucoma_negative": 333,
+        "glaucoma_prevalence": 0.17827868852459017,
+        "missing_labels": 0,
+        "has_age": true,
+        "has_eye": true,
+        "has_camera": false,
+        "age_mean": 60.59016393442623,
+        "age_std": 13.066724418794685,
+        "unique_eyes": [
+            "OD",
+            "OS"
+        ],
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "OIA-ODIR-test",
+        "split": "test",
+        "total_samples": 0,
+        "glaucoma_positive": 0,
+        "glaucoma_negative": 0,
+        "glaucoma_prevalence": 0.0,
+        "missing_labels": 0,
+        "has_age": false,
+        "has_eye": false,
+        "has_camera": false,
+        "age_mean": null,
+        "age_std": null,
+        "unique_eyes": null,
+        "unique_cameras": null,
+        "error": "Empty or None DataFrame"
+    },
+    {
+        "dataset_name": "CHAKSU",
+        "split": "test",
+        "total_samples": 2018,
+        "glaucoma_positive": 274,
+        "glaucoma_negative": 1744,
+        "glaucoma_prevalence": 0.13577799801783944,
+        "missing_labels": 0,
+        "has_age": false,
+        "has_eye": false,
+        "has_camera": true,
+        "age_mean": null,
+        "age_std": null,
+        "unique_eyes": null,
+        "unique_cameras": [
+            "Bosch",
+            "Forus",
+            "Remidio"
+        ],
+        "error": null
+    },
+    {
+        "dataset_name": "ACRIMA",
+        "split": "test",
+        "total_samples": 1406,
+        "glaucoma_positive": 788,
+        "glaucoma_negative": 618,
+        "glaucoma_prevalence": 0.5604551920341394,
+        "missing_labels": 0,
+        "has_age": false,
+        "has_eye": false,
+        "has_camera": false,
+        "age_mean": null,
+        "age_std": null,
+        "unique_eyes": null,
+        "unique_cameras": null,
+        "error": null
+    },
+    {
+        "dataset_name": "HYGD",
+        "split": "test",
+        "total_samples": 747,
+        "glaucoma_positive": 548,
+        "glaucoma_negative": 199,
+        "glaucoma_prevalence": 0.7336010709504686,
+        "missing_labels": 0,
+        "has_age": false,
+        "has_eye": false,
+        "has_camera": false,
+        "age_mean": null,
+        "age_std": null,
+        "unique_eyes": null,
+        "unique_cameras": null,
+        "error": null
+    }
+]
