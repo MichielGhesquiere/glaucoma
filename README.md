@@ -28,12 +28,9 @@ Actual image files are **not** included in the repository. Place them under `dat
 
 ## Training Example
 ```bash
-python scripts/train_classification.py \
-    --base_data_root /path/to/data \
-    --smdg_metadata_file data/raw/SMDG-19/metadata - standardized.csv \
-    --smdg_image_dir data/raw/SMDG-19/full-fundus/full-fundus
+python scripts/train_classification.py --config configs/classification_config.yaml
 ```
-Additional arguments control model type, augmentation and domain-adversarial settings. See `scripts/train_classification.py` for a full list.
+Command line arguments still override any values from the YAML file. See `scripts/train_classification.py` for all available options.
 
 ## Evaluating
 To evaluate the best checkpoint on the held-out ID test set:
