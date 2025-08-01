@@ -68,6 +68,7 @@ try:
         count_trainable_parameters, print_parameter_status
     )
     from src.utils.paths import adjust_path_for_data_type, set_base_data_dir
+    from src.utils.config_loader import load_config
 except ImportError as e:
     print(f"Error importing custom modules: {e}")
     print(
@@ -843,6 +844,8 @@ if __name__ == "__main__":
         description="Train Glaucoma Classification Model",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    parser.add_argument('--config', type=str, default=None,
+                        help='Path to a YAML configuration file with default arguments.')
 
     # Data Configuration
     data_group = parser.add_argument_group("Data Configuration")
@@ -1006,6 +1009,11 @@ if __name__ == "__main__":
     tune_group.add_argument('--linear_probe_epochs', type=int, default=10,
                            help='Maximum epochs for linear probing (only used with --ft_strategy linear)')
 
+    args, _ = parser.parse_known_args()
+    if args.config:
+        config_values = load_config(args.config)
+        if isinstance(config_values, dict):
+            parser.set_defaults(**config_values)
     args = parser.parse_args()
 
     BASE_DATA_DIR_CONFIG_KEY = args.base_data_root
