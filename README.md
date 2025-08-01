@@ -56,6 +56,14 @@ Calculates FNR and FPR disparities between specified subgroups.
 """
 ```
 
+## Repository Structure
+- `scripts/` – entry points for training, evaluation and analysis
+- `src/` – modular code for datasets, models and utilities
+- `configs/` – configuration files
+- `notebooks/` – exploratory notebooks
+- `dataset_analysis_results/` – dataset exploration figures
+
+
 ## License
 This project is released under the MIT License.
 
