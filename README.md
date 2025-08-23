@@ -19,6 +19,10 @@ Fundus photography provides a non-invasive method for examining the optic nerve 
 - **Retinal Nerve Fiber Layer (RNFL)**: Changes in thickness and appearance
 - **Vascular Changes**: Alterations in retinal blood vessel patterns
 
+![Fundus Photography in Glaucoma Detection](Glaucoma-fundus-explained.jpg)
+
+Source: [pfecbackoffice.info](https://pfecbackoffice.info/eye-encyclopedia/glaucoma/)*
+
 ### 1.3 Challenges in Automated Glaucoma Detection
 
 Traditional machine learning approaches face significant challenges in clinical deployment:
