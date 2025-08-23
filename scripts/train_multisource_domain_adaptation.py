@@ -1516,8 +1516,6 @@ def main():
                            default='data/raw/GRAPE')
     data_group.add_argument('--keh_base_dir', type=str,
                            default='data/raw/KEH')
-    data_group.add_argument('--grisk_base_dir', type=str,
-                           default='data/raw/griskFundus')
     
     # Dataset selection flags
     data_group.add_argument('--use_smdg', action='store_true', default=True)
@@ -1528,7 +1526,6 @@ def main():
     data_group.add_argument('--use_papila', action='store_true', default=True)
     data_group.add_argument('--use_grape', action='store_true', default=False)
     data_group.add_argument('--use_keh', action='store_true', default=False)
-    data_group.add_argument('--use_grisk', action='store_true', default=False)
     
     # Evaluation flags for external datasets
     data_group.add_argument('--eval_papilla', action='store_true', default=True)

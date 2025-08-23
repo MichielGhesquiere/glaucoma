@@ -113,111 +113,84 @@ $CommonTrainArgs = @{
     num_gradcam_samples = $NUM_GRADCAM_SAMPLES_PER_CATEGORY
 }
 
-## --- Run 4: VisionFM (Custom Weights) ---
-#Write-Host "`n----------------------------------------" -ForegroundColor Yellow
-#Write-Host "Training VisionFM (Custom Weights)..." -ForegroundColor Yellow
-#$VFM_WEIGHTS = "D:\glaucoma\models\VFM_Fundus_weights.pth"
-#$VFM_KEY = "teacher"
-#$VFMSpecificArgs = @{
-#    model_name = "vit_base_patch16_224"; custom_weights_path = $VFM_WEIGHTS; checkpoint_key = $VFM_KEY
-#    dropout_prob = 0.3; experiment_tag = "VFM_custom"
-#}
-#$VFMArgs = $CommonTrainArgs.Clone()
-#$VFMArgs.GetEnumerator() | ForEach-Object { $VFMSpecificArgs[$_.Name] = $_.Value }
-#$VFMArgumentList = Build-ArgumentList -ArgsHashTable $VFMSpecificArgs -DataType $DATA_TYPE_TO_USE -BaseDataRoot $BASE_DATA_ROOT -UseChaksu $ENABLE_CHAKSU -UseAmp $ENABLE_AMP -UseAirogs $ENABLE_AIROGS
-#Write-Host "Command: $PYTHON_EXE $SCRIPT_PATH $($VFMArgumentList -join ' ')"
-#& $PYTHON_EXE $SCRIPT_PATH $VFMArgumentList
-#Write-Host "--- VisionFM Training Finished ---" -ForegroundColor Green
-
-## --- Run 3: ConvNeXt-Base (Timm Pretrained) ---
-#Write-Host "`n----------------------------------------" -ForegroundColor Yellow
-#Write-Host "Training ConvNeXt-Base (Timm Pretrained)..." -ForegroundColor Yellow
-#$ConvNeXtSpecificArgs = @{
-#    model_name = "convnext_base" 
-#    use_timm_pretrained_if_no_custom = $true 
-#    dropout_prob = 0.3 
-#    experiment_tag = "ConvNeXtBase_timm"
-#}
-#$ConvNeXtArgs = $CommonTrainArgs.Clone()
-#$ConvNeXtArgs.GetEnumerator() | ForEach-Object { $ConvNeXtSpecificArgs[$_.Name] = $_.Value }
-#$ConvNeXtArgumentList = Build-ArgumentList -ArgsHashTable $ConvNeXtSpecificArgs -DataType $DATA_TYPE_TO_USE -BaseDataRoot $BASE_DATA_ROOT -UseChaksu $ENABLE_CHAKSU -UseAmp $ENABLE_AMP -UseAirogs $ENABLE_AIROGS
-#Write-Host "Command: $PYTHON_EXE $SCRIPT_PATH $($ConvNeXtArgumentList -join ' ')"
-#& $PYTHON_EXE $SCRIPT_PATH $ConvNeXtArgumentList
-#Write-Host "--- ConvNeXt-Base Training Finished ---" -ForegroundColor Green
-## --- Run 1: ResNet50 (Timm Pretrained) - Uses HIGHER LR 0.0003 ---
-#Write-Host "`n----------------------------------------" -ForegroundColor Yellow
-#Write-Host "Training ResNet50 (Timm Pretrained) with LR=$RESNET_LEARNING_RATE..." -ForegroundColor Yellow
-#$ResNetSpecificArgs = @{
-#    model_name = "resnet50"
-#    use_timm_pretrained_if_no_custom = $true 
-#    dropout_prob = 0.3
-#    experiment_tag = "ResNet50_timm"
-#    learning_rate = $RESNET_LEARNING_RATE  
-#}
-#$ResNetArgs = $CommonTrainArgs.Clone()
-#$ResNetArgs.GetEnumerator() | ForEach-Object { $ResNetSpecificArgs[$_.Name] = $_.Value }
-#$ResNetArgumentList = Build-ArgumentList -ArgsHashTable $ResNetSpecificArgs -DataType $DATA_TYPE_TO_USE -BaseDataRoot $BASE_DATA_ROOT -UseChaksu $ENABLE_CHAKSU -UseAmp $ENABLE_AMP -UseAirogs $ENABLE_AIROGS
-#Write-Host "Command: $PYTHON_EXE $SCRIPT_PATH $($ResNetArgumentList -join ' ')"
-#& $PYTHON_EXE $SCRIPT_PATH $ResNetArgumentList
-#Write-Host "--- ResNet50 Training Finished ---" -ForegroundColor Green
-#
-## --- Run 2: ViT-Base (Timm Pretrained) ---
-# Write-Host "`n----------------------------------------" -ForegroundColor Yellow
-# Write-Host "Training ViT-Base (Timm Pretrained)..." -ForegroundColor Yellow
-# $ViTSpecificArgs = @{
-#     model_name = "vit_base_patch16_224"
-#     use_timm_pretrained_if_no_custom = $true
-#     dropout_prob = 0.3
-#     experiment_tag = "ViTBase_timm"
-# }
-# $ViTArgs = $CommonTrainArgs.Clone()
-# $ViTArgs.GetEnumerator() | ForEach-Object { $ViTSpecificArgs[$_.Name] = $_.Value }
-# $ViTArgumentList = Build-ArgumentList -ArgsHashTable $ViTSpecificArgs -DataType $DATA_TYPE_TO_USE -BaseDataRoot $BASE_DATA_ROOT -UseChaksu $ENABLE_CHAKSU -UseAmp $ENABLE_AMP -UseAirogs $ENABLE_AIROGS
-# Write-Host "Command: $PYTHON_EXE $SCRIPT_PATH $($ViTArgumentList -join ' ')"
-# & $PYTHON_EXE $SCRIPT_PATH $ViTArgumentList
-# Write-Host "--- ViT-Base Training Finished ---" -ForegroundColor Green
-#
-# # --- Run 5: DINOv2 ViT-B/14 (Custom Weights) ---
-#Write-Host "`n----------------------------------------" -ForegroundColor Yellow
-#Write-Host "Training DINOv2 ViT-B/14 (Custom Weights)..." -ForegroundColor Yellow
-#$DINOV2_WEIGHTS = "D:\glaucoma\models\dinov2_vitb14_reg4_pretrain.pth"
-#$DINOV2_KEY = "teacher" 
-#$DINOV2SpecificArgs = @{
-#    model_name = "dinov2_vitb14"; custom_weights_path = $DINOV2_WEIGHTS; checkpoint_key = $DINOV2_KEY 
-#    dropout_prob = 0.3; experiment_tag = "DINOv2"
-#}
-#$DINOV2Args = $CommonTrainArgs.Clone()
-#$DINOV2Args.GetEnumerator() | ForEach-Object { $DINOV2SpecificArgs[$_.Name] = $_.Value }
-#$DINOV2ArgumentList = Build-ArgumentList -ArgsHashTable $DINOV2SpecificArgs -DataType $DATA_TYPE_TO_USE -BaseDataRoot $BASE_DATA_ROOT -UseChaksu $ENABLE_CHAKSU -UseAmp $ENABLE_AMP -UseAirogs $ENABLE_AIROGS
-#Write-Host "Command: $PYTHON_EXE $SCRIPT_PATH $($DINOV2ArgumentList -join ' ')"
-#& $PYTHON_EXE $SCRIPT_PATH $DINOV2ArgumentList
-#Write-Host "--- DINOv2 ViT-B/14 Training Finished ---" -ForegroundColor Green
-
-
-
-# --- Run 6: Regression-to-Classification Fine-tuning ---
+# --- Run 4: VisionFM (Custom Weights) ---
 Write-Host "`n----------------------------------------" -ForegroundColor Yellow
-Write-Host "Training ViT-Base (Regression-to-Classification)..." -ForegroundColor Yellow
-$REGRESSION_WEIGHTS = "D:\glaucoma\experiments\VCDR_Regression\VFM_ViTBase_CustomWeights_Regression_vit_base_patch16_224_seed42\vit_base_patch16_224_best_regressor.pth"  # UPDATE THIS PATH
-$REGRESSION_KEY = "model_state_dict"  # Or whatever key your regression model uses
-$RegressionSpecificArgs = @{
-    model_name = "vit_base_patch16_224"
-    custom_weights_path = $REGRESSION_WEIGHTS
-    checkpoint_key = $REGRESSION_KEY
-    is_regression_to_classification = $true    # This is the key flag
-    freeze_backbone_epochs = 5                 # Freeze backbone for first 5 epochs
-    backbone_lr_multiplier = 0.1              # Use 10x lower LR for backbone
-    dropout_prob = 0.3
-    experiment_tag = "Reg2Class"
-    num_epochs = 60                           # Might need fewer epochs since starting from regression
+Write-Host "Training VisionFM (Custom Weights)..." -ForegroundColor Yellow
+$VFM_WEIGHTS = "D:\glaucoma\models\VFM_Fundus_weights.pth"
+$VFM_KEY = "teacher"
+$VFMSpecificArgs = @{
+    model_name = "vit_base_patch16_224"; custom_weights_path = $VFM_WEIGHTS; checkpoint_key = $VFM_KEY
+    dropout_prob = 0.3; experiment_tag = "VFM_custom"
 }
-$RegressionArgs = $CommonTrainArgs.Clone()
-$RegressionArgs.GetEnumerator() | ForEach-Object { $RegressionSpecificArgs[$_.Name] = $_.Value }
-$RegressionArgumentList = Build-ArgumentList -ArgsHashTable $RegressionSpecificArgs -DataType $DATA_TYPE_TO_USE -BaseDataRoot $BASE_DATA_ROOT -UseChaksu $ENABLE_CHAKSU -UseAmp $ENABLE_AMP -UseAirogs $ENABLE_AIROGS
-Write-Host "Command: $PYTHON_EXE $SCRIPT_PATH $($RegressionArgumentList -join ' ')"
-& $PYTHON_EXE $SCRIPT_PATH $RegressionArgumentList
-Write-Host "--- Regression-to-Classification Training Finished ---" -ForegroundColor Green
+$VFMArgs = $CommonTrainArgs.Clone()
+$VFMArgs.GetEnumerator() | ForEach-Object { $VFMSpecificArgs[$_.Name] = $_.Value }
+$VFMArgumentList = Build-ArgumentList -ArgsHashTable $VFMSpecificArgs -DataType $DATA_TYPE_TO_USE -BaseDataRoot $BASE_DATA_ROOT -UseChaksu $ENABLE_CHAKSU -UseAmp $ENABLE_AMP -UseAirogs $ENABLE_AIROGS
+Write-Host "Command: $PYTHON_EXE $SCRIPT_PATH $($VFMArgumentList -join ' ')"
+& $PYTHON_EXE $SCRIPT_PATH $VFMArgumentList
+Write-Host "--- VisionFM Training Finished ---" -ForegroundColor Green
+# --- Run 3: ConvNeXt-Base (Timm Pretrained) ---
+Write-Host "`n----------------------------------------" -ForegroundColor Yellow
+Write-Host "Training ConvNeXt-Base (Timm Pretrained)..." -ForegroundColor Yellow
+$ConvNeXtSpecificArgs = @{
+    model_name = "convnext_base" 
+    use_timm_pretrained_if_no_custom = $true 
+    dropout_prob = 0.3 
+    experiment_tag = "ConvNeXtBase_timm"
+}
+$ConvNeXtArgs = $CommonTrainArgs.Clone()
+$ConvNeXtArgs.GetEnumerator() | ForEach-Object { $ConvNeXtSpecificArgs[$_.Name] = $_.Value }
+$ConvNeXtArgumentList = Build-ArgumentList -ArgsHashTable $ConvNeXtSpecificArgs -DataType $DATA_TYPE_TO_USE -BaseDataRoot $BASE_DATA_ROOT -UseChaksu $ENABLE_CHAKSU -UseAmp $ENABLE_AMP -UseAirogs $ENABLE_AIROGS
+Write-Host "Command: $PYTHON_EXE $SCRIPT_PATH $($ConvNeXtArgumentList -join ' ')"
+& $PYTHON_EXE $SCRIPT_PATH $ConvNeXtArgumentList
+Write-Host "--- ConvNeXt-Base Training Finished ---" -ForegroundColor Green
+# --- Run 1: ResNet50 (Timm Pretrained) - Uses HIGHER LR 0.0003 ---
+Write-Host "`n----------------------------------------" -ForegroundColor Yellow
+Write-Host "Training ResNet50 (Timm Pretrained) with LR=$RESNET_LEARNING_RATE..." -ForegroundColor Yellow
+$ResNetSpecificArgs = @{
+    model_name = "resnet50"
+    use_timm_pretrained_if_no_custom = $true 
+    dropout_prob = 0.3
+    experiment_tag = "ResNet50_timm"
+    learning_rate = $RESNET_LEARNING_RATE  
+}
+$ResNetArgs = $CommonTrainArgs.Clone()
+$ResNetArgs.GetEnumerator() | ForEach-Object { $ResNetSpecificArgs[$_.Name] = $_.Value }
+$ResNetArgumentList = Build-ArgumentList -ArgsHashTable $ResNetSpecificArgs -DataType $DATA_TYPE_TO_USE -BaseDataRoot $BASE_DATA_ROOT -UseChaksu $ENABLE_CHAKSU -UseAmp $ENABLE_AMP -UseAirogs $ENABLE_AIROGS
+Write-Host "Command: $PYTHON_EXE $SCRIPT_PATH $($ResNetArgumentList -join ' ')"
+& $PYTHON_EXE $SCRIPT_PATH $ResNetArgumentList
+Write-Host "--- ResNet50 Training Finished ---" -ForegroundColor Green
 
+# --- Run 2: ViT-Base (Timm Pretrained) ---
+ Write-Host "`n----------------------------------------" -ForegroundColor Yellow
+ Write-Host "Training ViT-Base (Timm Pretrained)..." -ForegroundColor Yellow
+ $ViTSpecificArgs = @{
+     model_name = "vit_base_patch16_224"
+     use_timm_pretrained_if_no_custom = $true
+     dropout_prob = 0.3
+     experiment_tag = "ViTBase_timm"
+ }
+ $ViTArgs = $CommonTrainArgs.Clone()
+ $ViTArgs.GetEnumerator() | ForEach-Object { $ViTSpecificArgs[$_.Name] = $_.Value }
+ $ViTArgumentList = Build-ArgumentList -ArgsHashTable $ViTSpecificArgs -DataType $DATA_TYPE_TO_USE -BaseDataRoot $BASE_DATA_ROOT -UseChaksu $ENABLE_CHAKSU -UseAmp $ENABLE_AMP -UseAirogs $ENABLE_AIROGS
+ Write-Host "Command: $PYTHON_EXE $SCRIPT_PATH $($ViTArgumentList -join ' ')"
+ & $PYTHON_EXE $SCRIPT_PATH $ViTArgumentList
+ Write-Host "--- ViT-Base Training Finished ---" -ForegroundColor Green
+
+ # --- Run 5: DINOv2 ViT-B/14 (Custom Weights) ---
+Write-Host "`n----------------------------------------" -ForegroundColor Yellow
+Write-Host "Training DINOv2 ViT-B/14 (Custom Weights)..." -ForegroundColor Yellow
+$DINOV2_WEIGHTS = "D:\glaucoma\models\dinov2_vitb14_reg4_pretrain.pth"
+$DINOV2_KEY = "teacher" 
+$DINOV2SpecificArgs = @{
+    model_name = "dinov2_vitb14"; custom_weights_path = $DINOV2_WEIGHTS; checkpoint_key = $DINOV2_KEY 
+    dropout_prob = 0.3; experiment_tag = "DINOv2"
+}
+$DINOV2Args = $CommonTrainArgs.Clone()
+$DINOV2Args.GetEnumerator() | ForEach-Object { $DINOV2SpecificArgs[$_.Name] = $_.Value }
+$DINOV2ArgumentList = Build-ArgumentList -ArgsHashTable $DINOV2SpecificArgs -DataType $DATA_TYPE_TO_USE -BaseDataRoot $BASE_DATA_ROOT -UseChaksu $ENABLE_CHAKSU -UseAmp $ENABLE_AMP -UseAirogs $ENABLE_AIROGS
+Write-Host "Command: $PYTHON_EXE $SCRIPT_PATH $($DINOV2ArgumentList -join ' ')"
+& $PYTHON_EXE $SCRIPT_PATH $DINOV2ArgumentList
+Write-Host "--- DINOv2 ViT-B/14 Training Finished ---" -ForegroundColor Green
 
 Write-Host "`n======================================================" -ForegroundColor Green
 Write-Host "All training runs completed for data_type '$DATA_TYPE_TO_USE'." -ForegroundColor Green
