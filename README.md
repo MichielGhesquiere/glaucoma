@@ -40,58 +40,13 @@ Our framework leverages multiple publicly available datasets to ensure robust tr
 
 *Figure: Distribution of samples across different datasets used in our multi-source domain adaptation framework, showing the diversity in data sources and class balance.*
 
-### 2.1 SMDG-19
-
-### 2.2 CHAKSU Multi-Camera Dataset
-
-- **Size**: 1,644 fundus images
-- **Cameras**: Three different fundus cameras (Bosch, Forus, Remidio)
-- **Population**: Indian cohort
-- **Annotations**: Majority-vote consensus from multiple experts
-- **Key Features**: Explicit camera type labeling for domain-specific analysis
-- **Use Case**: Multi-source training and out-of-distribution evaluation
-
-### 2.3 AIROGS (Artificial Intelligence for RObust Glaucoma Screening)
-
-- **Size**: 101,442 fundus images (training set)
-- **Population**: Diverse European cohort
-- **Quality**: Mix of high and moderate quality images
-- **Labels**: Binary glaucoma classification
-- **Key Features**: Large-scale dataset for robust pre-training
-- **Use Case**: Large-scale pre-training and data augmentation
-
-### 2.4 GRAPE (Glaucoma Risk Assessment and Progression Evaluation)
-
-- **Size**: Longitudinal dataset with multiple visits per patient
-- **Focus**: Glaucoma progression prediction
-- **Data**: Fundus images with visual field measurements
-- **Key Features**: Temporal progression labels for advanced modeling
-- **Use Case**: Progression prediction and longitudinal analysis
-
-#### PAPILLA
-- **Size**: 488 fundus images
-- **Origin**: Subset of SMDG-19 with specific identifiers
-- **Use Case**: Independent external validation
-
-#### ACRIMA (Automatic Classification of Retinal Images for Glaucoma)
-- **Size**: 705 fundus images
-- **Population**: Spanish cohort
-- **Use Case**: Cross-population generalization testing
-
-#### HYGD (Harvard Glaucoma Dataset)
-- **Size**: 1,000+ fundus images
-- **Population**: US-based cohort
-- **Use Case**: Geographic generalization assessment
-
-#### OIA-ODIR (Ocular Imaging for AI - Online Diabetic Retinopathy)
-- **Size**: Test subset for glaucoma classification
-- **Use Case**: Multi-disease classification robustness
-
 ## 3. Vision Foundation Model (VFM) Architecture
 
 ### 3.1 Foundation Model Overview
 
 Our approach is built upon Vision Foundation Models (VFMs), specifically designed for medical imaging applications. VFMs represent a paradigm shift from traditional supervised learning by leveraging self-supervised pre-training on large-scale unlabeled datasets.
+
+**Implementation**: This work utilizes the VisionFM model developed by the ABILAB at CUHK. For detailed model architecture, pre-training methodology, and implementation details, please refer to the official repository: [VisionFM GitHub](https://github.com/ABILab-CUHK/VisionFM/tree/main).
 
 ### 3.2 Self-Supervised Learning (SSL) Pre-training
 
@@ -108,40 +63,6 @@ The VFM employed in this work utilizes advanced SSL techniques:
 2. **Rich Feature Representations**: Learns generalizable visual patterns
 3. **Transfer Learning**: Strong initialization for downstream tasks
 4. **Domain Robustness**: Better handling of domain variations
-
-### 3.3 Model Architecture Details
-
-```
-VFM Architecture:
-├── Input: 224×224 RGB fundus images
-├── Patch Embedding: 16×16 patches → 768-dimensional vectors
-├── Positional Encoding: Learnable position embeddings
-├── Transformer Encoder: 12 layers, 12 attention heads
-├── Feature Extraction: 768-dimensional global representations
-└── Classification Head: Linear layer with dropout regularization
-```
-
-### 3.4 Fine-tuning Strategies
-
-Our framework implements three sophisticated fine-tuning approaches:
-
-#### 3.4.1 Linear Probing
-- **Frozen Backbone**: Pre-trained features remain fixed
-- **Trainable Component**: Only classification head
-- **Purpose**: Baseline assessment of feature quality
-- **Duration**: 5-15 epochs
-
-#### 3.4.2 Gradual Unfreezing
-- **Progressive Adaptation**: Layer-by-layer unfreezing
-- **Strategy**: Classification head → top layers → all layers
-- **Benefits**: Prevents catastrophic forgetting
-- **Monitoring**: Validation-based unfreezing decisions
-
-#### 3.4.3 Layer-wise Learning Rate Decay (LLRD)
-- **Differential Learning Rates**: Lower rates for deeper layers
-- **Decay Factor**: 0.85 (configurable)
-- **Rationale**: Preserve low-level features while adapting high-level representations
-- **Implementation**: Custom optimizer with layer-specific learning rates
 
 ## 4. Domain Adaptation Techniques
 
@@ -290,7 +211,6 @@ def test_time_adapt(self, x):
 #### 4.5.1 Leave-One-Dataset-Out (LODO) Evaluation
 - **Training**: Combine multiple source datasets
 - **Testing**: Evaluate on held-out target dataset
-- **Metrics**: Domain-specific performance assessment
 
 #### 4.5.2 Weighted Sampling
 - **Balanced Representation**: Equal sampling from each source domain
@@ -305,7 +225,6 @@ def test_time_adapt(self, x):
 - **Base Architecture**: ViT-Base-Patch16-224
 - **Pre-trained Weights**: VFM_Fundus_weights.pth
 - **Input Resolution**: 224×224 pixels
-- **Batch Size**: 32 (with gradient accumulation if needed)
 
 #### 5.1.2 Optimization
 - **Optimizer**: AdamW with weight decay (1e-4)
@@ -334,10 +253,3 @@ def test_time_adapt(self, x):
 - **Expected Calibration Error (ECE)**: Reliability of confidence estimates
 - **Brier Score**: Proper scoring rule for probabilistic predictions
 - **Reliability Diagrams**: Visual assessment of calibration quality
-
-
-
-#### 5.2.3 Fairness Metrics
-- **Demographic Parity**: Equal positive prediction rates across groups
-- **Equalized Odds**: Equal TPR and FPR across demographic groups
-- **Underdiagnosis Disparity**: Differences in false negative rates
