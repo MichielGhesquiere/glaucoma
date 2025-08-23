@@ -69,11 +69,15 @@ class MixStyle(nn.Module):
         if not self.training:
             return x
             
-        if torch.rand(1) > self.p:
+        if np.random.random() > self.p:
             return x
             
         B = x.size(0)
         if B < 2:
+            return x
+            
+        # Only apply to 4D tensors (feature maps with spatial dimensions)
+        if len(x.shape) != 4:
             return x
             
         mu = x.mean(dim=[2, 3], keepdim=True)

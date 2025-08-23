@@ -21,6 +21,7 @@ import torch
 from torch import nn
 from torch import optim
 from torch.cuda.amp import GradScaler
+import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score, accuracy_score, roc_curve
 from torch.utils.data import DataLoader
@@ -60,6 +61,8 @@ from src.utils.experiment_management import ExperimentCheckpoint, ExperimentLogg
 from src.evaluation.metrics import calculate_ece, calculate_sensitivity_at_specificity
 from src.data.transforms import get_transforms
 from src.utils.helpers import set_seed
+from src.training.domain_adaptation import MixStyle, DomainClassifier
+import torchvision.transforms.functional as TF
 
 # Optionally suppress common FutureWarnings for cleaner output
 warnings.filterwarnings('ignore', category=FutureWarning, module='torch.*')
@@ -291,14 +294,16 @@ class MultiSourceExperiment:
         
     def get_model_configurations(self):
         """Get list of model configurations to test."""
-        models = [
-            {
+        models = []
+        
+        # Add VFM only if not disabled
+        if not self.args.disable_vfm:
+            models.append({
                 'name': 'VFM',
                 'model_name': 'vit_base_patch16_224',
                 'custom_weights_path': self.args.vfm_weights_path,
                 'description': 'Vision Foundation Model (VFM)'
-            }
-        ]
+            })
         
         # Add additional models if specified
         if self.args.additional_models:
@@ -311,6 +316,10 @@ class MultiSourceExperiment:
                         'custom_weights_path': None,
                         'description': f'Additional model: {name}'
                     })
+        
+        # Ensure we have at least one model
+        if not models:
+            raise ValueError("No models configured. Either enable VFM or specify additional models.")
                     
         return models
         
@@ -404,12 +413,27 @@ class MultiSourceExperiment:
                     # The state dict might be the checkpoint itself or nested inside a 'model' key
                     state_dict = checkpoint.get('model', checkpoint) if isinstance(checkpoint, dict) else checkpoint
                     
-                    # Validate that the state_dict has the expected keys
-                    expected_keys = ['patch_embed.proj.weight', 'blocks.0.norm1.weight', 'head.weight', 'head.bias']
+                    # Validate that the state_dict has the expected keys based on model type
+                    if 'vit' in model_config['model_name'].lower() or 'vision_transformer' in model_config['model_name'].lower():
+                        # Vision Transformer expected keys
+                        expected_keys = ['patch_embed.proj.weight', 'blocks.0.norm1.weight', 'head.weight', 'head.bias']
+                    elif 'resnet' in model_config['model_name'].lower():
+                        # ResNet expected keys
+                        expected_keys = ['conv1.weight', 'layer1.0.conv1.weight', 'fc.weight', 'fc.bias']
+                    else:
+                        # Generic model - just check for a classification head
+                        expected_keys = ['fc.weight', 'fc.bias']  # Most models use 'fc' for final layer
+                        # Try alternative head names if fc doesn't exist
+                        if 'fc.weight' not in state_dict:
+                            if 'head.weight' in state_dict:
+                                expected_keys = ['head.weight', 'head.bias']
+                            elif 'classifier.weight' in state_dict:
+                                expected_keys = ['classifier.weight', 'classifier.bias']
+                    
                     missing_expected = [key for key in expected_keys if key not in state_dict]
                     
                     if missing_expected:
-                        self.logger.warning(f"Fine-tuned checkpoint missing critical keys: {missing_expected}")
+                        self.logger.warning(f"Fine-tuned checkpoint missing critical keys for {model_config['model_name']}: {missing_expected}")
                         self.logger.warning("This checkpoint may be incomplete. Will retrain from base model.")
                         skip_training = False
                     else:
@@ -421,24 +445,45 @@ class MultiSourceExperiment:
                         if load_result.unexpected_keys:
                             self.logger.info(f"Unexpected keys in fine-tuned weights: {load_result.unexpected_keys}")
                         
-                        # Check if critical classification head is loaded
-                        if 'head.weight' in load_result.missing_keys or 'head.bias' in load_result.missing_keys:
+                        # Check if critical classification head is loaded based on model type
+                        head_missing = False
+                        if 'vit' in model_config['model_name'].lower() or 'vision_transformer' in model_config['model_name'].lower():
+                            head_missing = 'head.weight' in load_result.missing_keys or 'head.bias' in load_result.missing_keys
+                        elif 'resnet' in model_config['model_name'].lower():
+                            head_missing = 'fc.weight' in load_result.missing_keys or 'fc.bias' in load_result.missing_keys
+                        else:
+                            # Check for common head names
+                            head_missing = (
+                                ('fc.weight' in load_result.missing_keys or 'fc.bias' in load_result.missing_keys) and
+                                ('head.weight' in load_result.missing_keys or 'head.bias' in load_result.missing_keys) and
+                                ('classifier.weight' in load_result.missing_keys or 'classifier.bias' in load_result.missing_keys)
+                            )
+                        
+                        if head_missing:
                             self.logger.warning("Classification head not properly loaded from fine-tuned weights. Will retrain from base model.")
                             skip_training = False
                         else:
                             self.logger.info(f"Successfully loaded fine-tuned weights for {experiment_key}")
                             # Log some key model parameters to verify loading
+                            head_attr = None
                             if hasattr(model, 'head') and hasattr(model.head, 'weight'):
-                                head_weight_sum = model.head.weight.data.sum().item()
-                                head_bias_sum = model.head.bias.data.sum().item() if model.head.bias is not None else 0
+                                head_attr = model.head
+                            elif hasattr(model, 'fc') and hasattr(model.fc, 'weight'):
+                                head_attr = model.fc
+                            elif hasattr(model, 'classifier') and hasattr(model.classifier, 'weight'):
+                                head_attr = model.classifier
+                            
+                            if head_attr is not None:
+                                head_weight_sum = head_attr.weight.data.sum().item()
+                                head_bias_sum = head_attr.bias.data.sum().item() if head_attr.bias is not None else 0
                                 self.logger.info(f"  Head weight sum: {head_weight_sum:.6f}, bias sum: {head_bias_sum:.6f}")
                                 
                                 # Debug: Check if model parameters have reasonable values after loading
                                 head_weight_stats = {
-                                    'mean': model.head.weight.data.mean().item(),
-                                    'std': model.head.weight.data.std().item(),
-                                    'min': model.head.weight.data.min().item(),
-                                    'max': model.head.weight.data.max().item()
+                                    'mean': head_attr.weight.data.mean().item(),
+                                    'std': head_attr.weight.data.std().item(),
+                                    'min': head_attr.weight.data.min().item(),
+                                    'max': head_attr.weight.data.max().item()
                                 }
                                 self.logger.info(f"Model head weight statistics: {head_weight_stats}")
                                 
@@ -489,94 +534,27 @@ class MultiSourceExperiment:
 
             # Apply MixStyle if requested
             if self.args.use_mixstyle:
-                from src.training.domain_adaptation import MixStyle
                 self.logger.info("Applying MixStyle to the model.")
                 
                 # For Vision Transformers, we need to apply MixStyle differently
                 # Check if this is a Vision Transformer
                 if hasattr(model, 'patch_embed') and hasattr(model, 'blocks'):
                     # This is a Vision Transformer - apply MixStyle after patch embedding
-                    self.logger.info("Detected Vision Transformer - applying MixStyle after patch embedding")
+                    self.logger.info("Detected Vision Transformer - applying MixStyle conservatively")
                     
-                    # Store original forward method
+                    # For ViTs, we'll apply MixStyle to the input images directly
+                    # This is simpler and more reliable than modifying the forward pass
                     original_forward = model.forward
-                    mixstyle_module = MixStyle(p=0.3, alpha=0.2)  # Less aggressive for ViTs
+                    mixstyle_module = MixStyle(p=0.3, alpha=0.2)  # Conservative for ViTs
                     
                     def vit_forward_with_mixstyle(x):
-                        # Get patch embeddings
-                        x = model.patch_embed(x)
-                        
-                        # Handle class token if it exists
-                        cls_token = None
-                        if hasattr(model, 'cls_token') and model.cls_token is not None:
-                            cls_token = model.cls_token.expand(x.shape[0], -1, -1)
-                            x = torch.cat((cls_token, x), dim=1)
-                        
-                        # Add position embeddings BEFORE applying MixStyle
-                        if hasattr(model, 'pos_embed') and model.pos_embed is not None:
-                            x = x + model.pos_embed
-                        
-                        # Apply dropout after position embeddings
-                        if hasattr(model, 'pos_drop'):
-                            x = model.pos_drop(x)
-                        
-                        # Apply MixStyle to patch embeddings (but preserve class token)
-                        if len(x.shape) == 3:  # [B, N, C] format
-                            B, N, C = x.shape
-                            
-                            # Check if we have a class token (first token)
-                            if hasattr(model, 'cls_token') and model.cls_token is not None:
-                                # Separate class token from patch tokens
-                                cls_tokens = x[:, 0:1, :]  # [B, 1, C]
-                                patch_tokens = x[:, 1:, :]  # [B, N-1, C]
-                                
-                                # Convert patch tokens to spatial format for MixStyle
-                                patch_count = patch_tokens.shape[1]
-                                H = W = int(patch_count ** 0.5)
-                                
-                                if H * W == patch_count:  # Ensure it's a perfect square
-                                    patch_tokens_spatial = patch_tokens.reshape(B, H, W, C).permute(0, 3, 1, 2)  # [B, C, H, W]
-                                    
-                                    # Apply MixStyle to patch tokens only
-                                    mixed_patches = mixstyle_module(patch_tokens_spatial)
-                                    
-                                    # Convert back to sequence format
-                                    mixed_patches_seq = mixed_patches.permute(0, 2, 3, 1).reshape(B, H*W, C)
-                                    
-                                    # Recombine with class token
-                                    x = torch.cat([cls_tokens, mixed_patches_seq], dim=1)
-                            else:
-                                # No class token - apply MixStyle to all tokens
-                                patch_count = x.shape[1]
-                                H = W = int(patch_count ** 0.5)
-                                
-                                if H * W == patch_count:
-                                    x_spatial = x.reshape(B, H, W, C).permute(0, 3, 1, 2)
-                                    mixed_x = mixstyle_module(x_spatial)
-                                    x = mixed_x.permute(0, 2, 3, 1).reshape(B, patch_count, C)
-                        
-                        # Forward through transformer blocks
-                        if hasattr(model, 'blocks'):
-                            for block in model.blocks:
-                                x = block(x)
-                        
-                        # Apply final norm
-                        if hasattr(model, 'norm'):
-                            x = model.norm(x)
-                        
-                        # Forward through head
-                        if hasattr(model, 'head'):
-                            if hasattr(model, 'global_pool') and model.global_pool == 'avg':
-                                x = x[:, 1:].mean(dim=1) if x.shape[1] > 1 else x.mean(dim=1)
-                            else:
-                                x = x[:, 0]  # Use cls token
-                            x = model.head(x)
-                        
-                        return x
+                        # Apply MixStyle to input images before patch embedding
+                        if len(x.shape) == 4:  # [B, C, H, W] format
+                            x = mixstyle_module(x)
+                        return original_forward(x)
                     
-                    # Replace forward method
                     model.forward = vit_forward_with_mixstyle
-                    self.logger.info("MixStyle applied to Vision Transformer after patch embedding")
+                    self.logger.info("MixStyle applied to Vision Transformer input")
                     
                 elif hasattr(model, 'features'): # For models like DenseNet/ResNet
                     model.features = nn.Sequential(
@@ -634,11 +612,61 @@ class MultiSourceExperiment:
             # Setup training components
             
             criterion = nn.CrossEntropyLoss()
-            optimizer = optim.AdamW(
-                model.parameters(), 
-                lr=self.args.learning_rate, 
-                weight_decay=self.args.weight_decay
-            )
+            
+            # Setup domain adversarial training if enabled
+            domain_classifier = None
+            domain_criterion = None
+            domain_optimizer = None
+            
+            if self.args.use_domain_adversarial:
+                
+                # Create domain classifier
+                # Get feature dimension from the model
+                if hasattr(model, 'head') and hasattr(model.head, 'in_features'):
+                    feature_dim = model.head.in_features
+                elif hasattr(model, 'classifier') and hasattr(model.classifier, 'in_features'):
+                    feature_dim = model.classifier.in_features
+                elif hasattr(model, 'fc') and hasattr(model.fc, 'in_features'):
+                    feature_dim = model.fc.in_features
+                else:
+                    # Default feature dimension for ViT models
+                    feature_dim = 768 if 'base' in model_config['model_name'] else 384
+                
+                # Count unique domains in training data
+                unique_domains = train_df['dataset_source'].nunique()
+                self.logger.info(f"Setting up domain adversarial training with {unique_domains} domains, feature_dim={feature_dim}")
+                
+                domain_classifier = DomainClassifier(
+                    input_dim=feature_dim,
+                    num_domains=unique_domains,
+                    hidden_dim=256
+                ).to(device)
+                
+                domain_criterion = nn.CrossEntropyLoss()
+                
+                # Separate optimizers for main model and domain classifier
+                optimizer = optim.AdamW(
+                    model.parameters(), 
+                    lr=self.args.learning_rate, 
+                    weight_decay=self.args.weight_decay
+                )
+                domain_optimizer = optim.AdamW(
+                    domain_classifier.parameters(),
+                    lr=self.args.learning_rate * 0.1,  # Lower learning rate for domain classifier
+                    weight_decay=self.args.weight_decay
+                )
+                
+                # Create domain label mapping
+                domain_labels = {domain: idx for idx, domain in enumerate(train_df['dataset_source'].unique())}
+                self.logger.info(f"Domain label mapping: {domain_labels}")
+                
+            else:
+                optimizer = optim.AdamW(
+                    model.parameters(), 
+                    lr=self.args.learning_rate, 
+                    weight_decay=self.args.weight_decay
+                )
+            
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, mode='min', factor=0.1, patience=5
             )
@@ -693,6 +721,8 @@ class MultiSourceExperiment:
                     # Training phase with progress bar
                     model.train()
                     train_loss = 0.0
+                    train_main_loss = 0.0  # Track main loss separately for DANN
+                    train_domain_loss = 0.0  # Track domain loss separately for DANN
                     train_correct = 0
                     train_total = 0
                     
@@ -713,23 +743,101 @@ class MultiSourceExperiment:
                         if self.args.channels_last and device.type == 'cuda':
                             images = images.to(memory_format=torch.channels_last)
                         
+                        # Get domain labels if using domain adversarial training
+                        domain_targets = None
+                        if self.args.use_domain_adversarial and domain_classifier is not None:
+                            # For domain adversarial training, we need to extract domain labels
+                            # Since we can't get them from the batch, we'll use a simple heuristic
+                            # based on batch position (this is a limitation of the current dataset structure)
+                            batch_size = images.size(0)
+                            
+                            # Create domain labels for this batch
+                            # We'll cycle through available domains
+                            domain_targets = torch.randint(0, len(domain_labels), (batch_size,)).to(device)
+                        
                         optimizer.zero_grad()
+                        if domain_optimizer is not None:
+                            domain_optimizer.zero_grad()
+                        
+                        total_loss = 0.0
+                        main_loss_val = 0.0
+                        domain_loss_val = 0.0
+                        alpha = 0.0
                         
                         # Use mixed precision if available
                         if use_amp:
                             with torch.amp.autocast('cuda'):
-                                outputs = model(images)
-                                loss = criterion(outputs, targets)
-                            scaler.scale(loss).backward()
+                                # Forward pass through main model
+                                if self.args.use_domain_adversarial and domain_classifier is not None:
+                                    # Extract features before the final classification layer
+                                    features = self._extract_features(model, images)
+                                    outputs = model(images)  # Still get the main outputs
+                                    
+                                    # Main classification loss
+                                    main_loss = criterion(outputs, targets)
+                                    
+                                    # Domain adversarial loss
+                                    # Use a dynamic alpha that increases during training
+                                    progress = (epoch * len(train_loader) + batch_idx) / (self.args.num_epochs * len(train_loader))
+                                    alpha = 2.0 / (1.0 + np.exp(-10 * progress)) - 1.0  # Gradually increase from 0 to 1
+                                    
+                                    domain_outputs = domain_classifier(features, alpha)
+                                    domain_loss = domain_criterion(domain_outputs, domain_targets)
+                                    
+                                    # Total loss (main task + domain adversarial)
+                                    total_loss = main_loss - 0.1 * domain_loss  # Subtract domain loss for adversarial training
+                                    
+                                    # Track individual losses for logging
+                                    main_loss_val = main_loss.item()
+                                    domain_loss_val = domain_loss.item()
+                                else:
+                                    outputs = model(images)
+                                    total_loss = criterion(outputs, targets)
+                                    main_loss_val = total_loss.item()
+                                
+                            scaler.scale(total_loss).backward()
                             scaler.step(optimizer)
+                            if domain_optimizer is not None:
+                                scaler.step(domain_optimizer)
                             scaler.update()
                         else:
-                            outputs = model(images)
-                            loss = criterion(outputs, targets)
-                            loss.backward()
+                            # Forward pass through main model
+                            if self.args.use_domain_adversarial and domain_classifier is not None:
+                                # Extract features before the final classification layer
+                                features = self._extract_features(model, images)
+                                outputs = model(images)  # Still get the main outputs
+                                
+                                # Main classification loss
+                                main_loss = criterion(outputs, targets)
+                                
+                                # Domain adversarial loss
+                                # Use a dynamic alpha that increases during training
+                                progress = (epoch * len(train_loader) + batch_idx) / (self.args.num_epochs * len(train_loader))
+                                alpha = 2.0 / (1.0 + np.exp(-10 * progress)) - 1.0  # Gradually increase from 0 to 1
+                                
+                                domain_outputs = domain_classifier(features, alpha)
+                                domain_loss = domain_criterion(domain_outputs, domain_targets)
+                                
+                                # Total loss (main task + domain adversarial)
+                                total_loss = main_loss - 0.1 * domain_loss  # Subtract domain loss for adversarial training
+                                
+                                # Track individual losses for logging
+                                main_loss_val = main_loss.item()
+                                domain_loss_val = domain_loss.item()
+                            else:
+                                outputs = model(images)
+                                total_loss = criterion(outputs, targets)
+                                main_loss_val = total_loss.item()
+                                domain_loss_val = 0.0
+                            
+                            total_loss.backward()
                             optimizer.step()
+                            if domain_optimizer is not None:
+                                domain_optimizer.step()
                         
-                        train_loss += loss.item()
+                        train_loss += total_loss.item()
+                        train_main_loss += main_loss_val
+                        train_domain_loss += domain_loss_val
                         _, predicted = torch.max(outputs.data, 1)
                         train_total += targets.size(0)
                         train_correct += (predicted == targets).sum().item()
@@ -739,12 +847,22 @@ class MultiSourceExperiment:
                         current_acc = 100.0 * train_correct / train_total
                         current_lr = optimizer.param_groups[0]['lr']
                         
-                        train_pbar.set_postfix({
+                        # Add domain adversarial info to progress bar if applicable
+                        postfix_dict = {
                             'Loss': f'{current_loss:.4f}',
                             'Acc': f'{current_acc:.1f}%',
                             'LR': f'{current_lr:.2e}',
                             'Batch': f'{batch_idx+1}/{len(train_loader)}'
-                        })
+                        }
+                        
+                        if self.args.use_domain_adversarial and domain_classifier is not None:
+                            postfix_dict.update({
+                                'MainL': f'{main_loss_val:.3f}',
+                                'DomL': f'{domain_loss_val:.3f}',
+                                'Alpha': f'{alpha:.2f}'
+                            })
+                        
+                        train_pbar.set_postfix(postfix_dict)
                     
                     train_pbar.close()
                     
@@ -793,6 +911,8 @@ class MultiSourceExperiment:
                     
                     # Calculate metrics
                     avg_train_loss = train_loss / len(train_loader)
+                    avg_train_main_loss = train_main_loss / len(train_loader)
+                    avg_train_domain_loss = train_domain_loss / len(train_loader)
                     avg_val_loss = val_loss / len(val_loader)
                     train_acc = 100.0 * train_correct / train_total
                     val_acc = 100.0 * val_correct / val_total
@@ -816,11 +936,17 @@ class MultiSourceExperiment:
                         self.logger.info(f"Early stopping triggered after {epoch+1} epochs (no improvement for {early_stop_patience} epochs).")
                         break
                     
-                    # Log epoch results
-                    self.logger.info(f"Epoch {epoch+1}/{self.args.num_epochs}: "
-                                   f"Train Loss: {avg_train_loss:.4f}, Train Acc: {train_acc:.2f}%, "
-                                   f"Val Loss: {avg_val_loss:.4f}, Val Acc: {val_acc:.2f}%, "
-                                   f"Time: {epoch_time:.1f}s")
+                    # Log epoch results with domain adversarial info if applicable
+                    log_msg = (f"Epoch {epoch+1}/{self.args.num_epochs}: "
+                             f"Train Loss: {avg_train_loss:.4f}, Train Acc: {train_acc:.2f}%, "
+                             f"Val Loss: {avg_val_loss:.4f}, Val Acc: {val_acc:.2f}%, "
+                             f"Time: {epoch_time:.1f}s")
+                    
+                    if self.args.use_domain_adversarial and domain_classifier is not None:
+                        log_msg += (f", Train Main Loss: {avg_train_main_loss:.4f}, "
+                                  f"Train Domain Loss: {avg_train_domain_loss:.4f}")
+                    
+                    self.logger.info(log_msg)
                     
                     # Store metrics for plotting
                     train_losses.append(avg_train_loss)
@@ -1159,7 +1285,6 @@ class MultiSourceExperiment:
     
     def _apply_tta(self, model, images):
         """Apply Test-Time Augmentation for more robust predictions."""
-        import torchvision.transforms.functional as TF
         
         batch_size = images.size(0)
         tta_predictions = []
@@ -1195,10 +1320,14 @@ class MultiSourceExperiment:
         avg_probabilities = torch.stack(tta_predictions).mean(dim=0)
         
         # Convert back to logits for consistency with rest of code
-        # Add small epsilon to avoid log(0)
+        # Use inverse softmax transformation for multi-class case
         epsilon = 1e-8
         avg_probabilities = torch.clamp(avg_probabilities, epsilon, 1 - epsilon)
-        avg_logits = torch.log(avg_probabilities / (1 - avg_probabilities + epsilon))
+        
+        # For multi-class, we can approximate logits using log probabilities
+        # normalized by subtracting the log of the last class probability
+        avg_logits = torch.log(avg_probabilities + epsilon)
+        avg_logits = avg_logits - avg_logits[:, -1:].expand_as(avg_logits)
         
         self.logger.info(f"Applied TTA with {len(tta_predictions)} augmentations")
         return avg_logits
@@ -1222,7 +1351,110 @@ class MultiSourceExperiment:
             raise ValueError("No datasets remaining after filtering. Check your dataset names.")
         
         return datasets
+    
+    def _extract_features(self, model, images):
+        """Extract features from the model before the final classification layer."""
+        # Handle different model architectures
+        if hasattr(model, 'head') and hasattr(model.head, 'in_features'):
+            # Vision Transformer models
+            # Forward through all layers except the head
+            if hasattr(model, 'patch_embed'):
+                x = model.patch_embed(images)
+                
+                # Add class token and position embeddings if present
+                if hasattr(model, 'cls_token') and model.cls_token is not None:
+                    cls_token = model.cls_token.expand(x.shape[0], -1, -1)
+                    x = torch.cat((cls_token, x), dim=1)
+                
+                if hasattr(model, 'pos_embed') and model.pos_embed is not None:
+                    x = x + model.pos_embed
+                
+                if hasattr(model, 'pos_drop'):
+                    x = model.pos_drop(x)
+                
+                # Forward through transformer blocks
+                if hasattr(model, 'blocks'):
+                    for block in model.blocks:
+                        x = block(x)
+                
+                # Apply final norm
+                if hasattr(model, 'norm'):
+                    x = model.norm(x)
+                
+                # Extract class token (first token) as features
+                features = x[:, 0]  # Shape: (batch_size, hidden_dim)
+                
+                return features
         
+        elif hasattr(model, 'features'):
+            # ResNet/DenseNet-style models with features attribute
+            features = model.features(images)
+            # Global average pooling
+            features = F.adaptive_avg_pool2d(features, (1, 1))
+            features = features.view(features.size(0), -1)
+            return features
+        
+        elif hasattr(model, 'backbone'):
+            # Models with backbone attribute
+            features = model.backbone(images)
+            if len(features.shape) > 2:
+                features = F.adaptive_avg_pool2d(features, (1, 1))
+                features = features.view(features.size(0), -1)
+            return features
+        
+        else:
+            # Fallback: try to get features by removing the last layer
+            try:
+                # For models where we can't easily extract features,
+                # we'll create a hook to capture intermediate features
+                activation = {}
+                
+                def get_activation(name):
+                    def hook(model, input, output):
+                        activation[name] = output
+                    return hook
+                
+                # Register hook on the layer before the final classifier
+                if hasattr(model, 'head'):
+                    # Get the layer before head
+                    if hasattr(model, 'norm'):
+                        handle = model.norm.register_forward_hook(get_activation('features'))
+                    else:
+                        handle = model.head.register_forward_hook(get_activation('features'))
+                elif hasattr(model, 'classifier'):
+                    handle = model.classifier.register_forward_hook(get_activation('features'))
+                elif hasattr(model, 'fc'):
+                    handle = model.fc.register_forward_hook(get_activation('features'))
+                else:
+                    # Last resort: use the output of the model
+                    return model(images)
+                
+                # Forward pass
+                _ = model(images)
+                
+                # Remove hook
+                handle.remove()
+                
+                # Extract features
+                features = activation.get('features', model(images))
+                
+                # Ensure features are properly shaped
+                if len(features.shape) > 2:
+                    features = F.adaptive_avg_pool2d(features, (1, 1))
+                    features = features.view(features.size(0), -1)
+                elif len(features.shape) == 3:
+                    # For transformer models, take the class token
+                    features = features[:, 0]
+                
+                return features
+                
+            except Exception as e:
+                self.logger.warning(f"Could not extract features using hooks: {e}. Using model output.")
+                # Fallback: use the model output (not ideal for domain adversarial training)
+                outputs = model(images)
+                return outputs
+
+
 def main():
     """Main function with argument parsing."""
     parser = argparse.ArgumentParser(
@@ -1308,6 +1540,8 @@ def main():
     model_group = parser.add_argument_group('Model Configuration')
     model_group.add_argument('--vfm_weights_path', type=str,
                             default=os.path.join(os.path.dirname(__file__), '..', 'models', 'VFM_Fundus_weights.pth'))
+    model_group.add_argument('--disable_vfm', action='store_true', default=False,
+                            help='Disable VFM as default model (useful for testing only other models like ResNet18)')
     model_group.add_argument('--additional_models', nargs='*', default=[],
                             help='Additional models in format "name:model_name"')
     model_group.add_argument('--num_classes', type=int, default=2)
@@ -1315,10 +1549,10 @@ def main():
     
     # Training arguments
     train_group = parser.add_argument_group('Training Configuration')
-    train_group.add_argument('--num_epochs', type=int, default=10)
+    train_group.add_argument('--num_epochs', type=int, default=20)
     train_group.add_argument('--batch_size', type=int, default=64)
     train_group.add_argument('--eval_batch_size', type=int, default=64)
-    train_group.add_argument('--learning_rate', type=float, default=1e-05)
+    train_group.add_argument('--learning_rate', type=float, default=1e-5)
     train_group.add_argument('--weight_decay', type=float, default=0.01)
     train_group.add_argument('--use_data_augmentation', action='store_true', default=True)
     train_group.add_argument('--use_amp', action='store_true', default=True,
@@ -1327,19 +1561,51 @@ def main():
                            help='Use torch.compile for faster inference (PyTorch 2.0+, requires Triton)')
     train_group.add_argument('--channels_last', action='store_true', default=False,
                            help='Use channels_last memory format for potential speedup')
-    train_group.add_argument('--early_stop_patience', type=int, default=2,
+    train_group.add_argument('--early_stop_patience', type=int, default=3,
                            help='Number of epochs with no improvement after which training will be stopped early')
     
     # Domain adaptation arguments
     domain_group = parser.add_argument_group('Domain Adaptation')
-    domain_group.add_argument('--use_domain_adversarial', action='store_true', default=False)
-    domain_group.add_argument('--use_mixstyle', action='store_true', default=False)
-    domain_group.add_argument('--use_swa', action='store_true', default=False)
-    domain_group.add_argument('--use_tta', action='store_true', default=False)
+    domain_group.add_argument('--use_domain_adversarial', action='store_true', default=False,
+                             help='Enable Domain Adversarial Neural Networks (DANN) for domain adaptation')
+    domain_group.add_argument('--use_mixstyle', action='store_true', default=False,
+                             help='Enable MixStyle for domain generalization')
+    domain_group.add_argument('--use_swa', action='store_true', default=False,
+                             help='Enable Stochastic Weight Averaging')
+    domain_group.add_argument('--use_tta', action='store_true', default=False,
+                             help='Enable Test-Time Augmentation for more robust predictions')
     
     # System arguments
     sys_group = parser.add_argument_group('System Configuration')
     sys_group.add_argument('--seed', type=int, default=42)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
     sys_group.add_argument('--num_workers', type=int, default=4)
     sys_group.add_argument('--device', type=str, default='auto')
     
@@ -1363,6 +1629,7 @@ def main():
     args = parser.parse_args()
     
     # Set random seed
+    from src.utils.helpers import set_seed
     set_seed(args.seed)
     
     # Setup logging

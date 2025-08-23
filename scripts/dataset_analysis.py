@@ -43,7 +43,11 @@ from torchvision import transforms
 import umap
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_curve, auc, roc_auc_score
 from tqdm import tqdm
+import cv2
+import random
 
 # Ensure custom modules can be imported
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -52,6 +56,10 @@ try:
     from src.utils.helpers import NpEncoder, set_seed
     from src.data.utils import adjust_path_for_data_type
     from src.data.external_loader import load_external_test_data
+    
+    # Import U-Net model and metrics
+    from src.models.segmentation.unet import MultiTaskUNet, OpticDiscCupPredictor
+    from src.features.metrics import GlaucomaMetrics
     
     # Import from train_classification.py
     import sys
@@ -85,10 +93,16 @@ PROCESSED_DIR_NAME_CONST = "processed"
 class DatasetAnalyzer:
     """Class to handle comprehensive dataset analysis."""
     
-    def __init__(self, output_dir: str):
+    def __init__(self, output_dir: str, unet_model_path: str = None):
         self.output_dir = output_dir
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.summary_data = []
+        self.vcdr_results = []  # Store vCDR analysis results
+        
+        # U-Net segmentation setup
+        self.unet_model_path = unet_model_path
+        self.predictor = None
+        self.metrics_calculator = None
         
         # Create output directory
         os.makedirs(output_dir, exist_ok=True)
@@ -96,6 +110,20 @@ class DatasetAnalyzer:
         # Setup plot style
         plt.style.use('default')
         sns.set_palette("husl")
+        
+        # Initialize U-Net if model path provided
+        if self.unet_model_path and os.path.exists(self.unet_model_path):
+            try:
+                logger.info(f"Initializing U-Net predictor with model: {self.unet_model_path}")
+                self.predictor = OpticDiscCupPredictor(model_path=self.unet_model_path)
+                self.metrics_calculator = GlaucomaMetrics()
+                logger.info("U-Net predictor and metrics calculator initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize U-Net predictor: {e}")
+                self.predictor = None
+                self.metrics_calculator = None
+        else:
+            logger.info("No U-Net model path provided or file doesn't exist. Skipping vCDR analysis.")
         
     def analyze_dataframe(self, df: pd.DataFrame, dataset_name: str, split: str = "Unknown") -> dict:
         """Analyze a single DataFrame and return statistics."""
@@ -189,6 +217,17 @@ class DatasetAnalyzer:
     def add_dataset_analysis(self, df: pd.DataFrame, dataset_name: str, split: str = "Unknown"):
         """Add analysis of a dataset to the summary."""
         analysis = self.analyze_dataframe(df, dataset_name, split)
+        
+        # Filter out datasets with less than 100 samples
+        if analysis['total_samples'] < 100:
+            logger.info(f"Skipping {dataset_name} ({split}): only {analysis['total_samples']} samples (< 100)")
+            return
+        
+        # Filter out SMDG-SMDG_Unknown dataset
+        if 'SMDG_Unknown' in dataset_name or 'SMDG-SMDG_Unknown' in dataset_name:
+            logger.info(f"Skipping {dataset_name} ({split}): SMDG_Unknown dataset excluded")
+            return
+            
         self.summary_data.append(analysis)
         
         # Log summary
@@ -318,6 +357,9 @@ class DatasetAnalyzer:
         # Create combined dataset-split labels
         df_plot['dataset_split'] = df_plot['dataset_name'] + ' (' + df_plot['split'] + ')'
         
+        # Clean dataset names by removing SMDG- prefix
+        df_plot['dataset_split_clean'] = df_plot['dataset_split'].str.replace('SMDG-', '')
+        
         # Create plot
         plt.figure(figsize=(14, 8))
         
@@ -334,7 +376,7 @@ class DatasetAnalyzer:
         plt.xlabel('Dataset (Split)', fontsize=12)
         plt.ylabel('Glaucoma Prevalence', fontsize=12)
         plt.title('Glaucoma Prevalence Across Datasets', fontsize=14, fontweight='bold')
-        plt.xticks(range(len(df_plot)), df_plot['dataset_split'], rotation=45, ha='right')
+        plt.xticks(range(len(df_plot)), df_plot['dataset_split_clean'], rotation=45, ha='right')
         plt.ylim(0, max(df_plot['glaucoma_prevalence']) * 1.1)
         
         # Add horizontal line at 50%
@@ -367,8 +409,11 @@ class DatasetAnalyzer:
         # Create combined dataset-split labels
         df_plot['dataset_split'] = df_plot['dataset_name'] + ' (' + df_plot['split'] + ')'
         
+        # Clean dataset names by removing SMDG- prefix and split labels (all), (test), etc.
+        df_plot['dataset_name_clean'] = df_plot['dataset_name'].str.replace('SMDG-', '')
+        
         # Create plot
-        plt.figure(figsize=(14, 8))
+        plt.figure(figsize=(14, 10))
         
         # Stacked bar plot for positive/negative samples
         bottom_bars = plt.bar(range(len(df_plot)), df_plot['glaucoma_negative'], 
@@ -377,11 +422,27 @@ class DatasetAnalyzer:
                           bottom=df_plot['glaucoma_negative'], 
                           color='lightcoral', label='Glaucoma', alpha=0.8)
         
-        plt.xlabel('Dataset (Split)', fontsize=12)
+        # Add text annotations on top of bars with G/Total ratio and prevalence
+        for i, (idx, row) in enumerate(df_plot.iterrows()):
+            total_samples = row['total_samples']
+            glaucoma_samples = row['glaucoma_positive']
+            prevalence = row['glaucoma_prevalence']
+            
+            # Position text above the bar
+            bar_height = total_samples
+            plt.text(i, bar_height + max(df_plot['total_samples']) * 0.02, 
+                    f'{glaucoma_samples}/{total_samples}\n({prevalence:.1%})', 
+                    ha='center', va='bottom', fontsize=9, fontweight='bold',
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8, edgecolor='gray'))
+        
+        plt.xlabel('Dataset', fontsize=12)
         plt.ylabel('Number of Samples', fontsize=12)
         plt.title('Sample Distribution Across Datasets', fontsize=14, fontweight='bold')
-        plt.xticks(range(len(df_plot)), df_plot['dataset_split'], rotation=45, ha='right')
+        plt.xticks(range(len(df_plot)), df_plot['dataset_name_clean'], rotation=45, ha='right')
         plt.legend()
+        
+        # Adjust y-limit to accommodate text annotations
+        plt.ylim(0, max(df_plot['total_samples']) * 1.15)
         
         plt.tight_layout()
         
@@ -409,7 +470,10 @@ class DatasetAnalyzer:
         # Create metadata availability matrix
         metadata_cols = ['has_age', 'has_eye', 'has_camera']
         metadata_matrix = df_plot[metadata_cols].astype(int)
-        metadata_matrix.index = df_plot['dataset_name'] + ' (' + df_plot['split'] + ')'
+        
+        # Clean dataset names by removing SMDG- prefix
+        clean_index = (df_plot['dataset_name'] + ' (' + df_plot['split'] + ')').str.replace('SMDG-', '')
+        metadata_matrix.index = clean_index
         metadata_matrix.columns = ['Age', 'Eye', 'Camera']
         
         # Create heatmap
@@ -430,24 +494,29 @@ class DatasetAnalyzer:
         logger.info(f"Metadata availability plot saved to: {plot_path}")
     
     def create_pixel_distribution_plots(self, datasets_dict: dict):
-        """Create pixel distribution comparison plots for datasets with 200+ samples."""
+        """Create pixel distribution comparison plots for datasets with 100+ samples."""
         logger.info("Creating pixel distribution analysis...")
         
-        # Filter datasets with sufficient samples
+        # Filter datasets with sufficient samples (changed from 200+ to 100+)
         valid_datasets = []
         for dataset_type, splits in datasets_dict.items():
             for split_name, df in splits.items():
-                if df is not None and not df.empty and len(df) >= 200:
-                    valid_datasets.append((f"{dataset_type}_{split_name}", df))
+                if df is not None and not df.empty and len(df) >= 100:
+                    # Skip SMDG_Unknown datasets
+                    dataset_full_name = f"{dataset_type}_{split_name}"
+                    if 'SMDG_Unknown' not in dataset_full_name and 'SMDG-SMDG_Unknown' not in dataset_full_name:
+                        valid_datasets.append((dataset_full_name, df))
         
         # Also check external datasets
         if hasattr(self, '_external_datasets'):
             for dataset_name, df in self._external_datasets.items():
-                if df is not None and not df.empty and len(df) >= 200:
-                    valid_datasets.append((dataset_name, df))
+                if df is not None and not df.empty and len(df) >= 100:
+                    # Skip SMDG_Unknown datasets
+                    if 'SMDG_Unknown' not in dataset_name and 'SMDG-SMDG_Unknown' not in dataset_name:
+                        valid_datasets.append((dataset_name, df))
         
         if not valid_datasets:
-            logger.warning("No datasets with 200+ samples found for pixel distribution analysis")
+            logger.warning("No datasets with 100+ samples found for pixel distribution analysis")
             return
         
         logger.info(f"Analyzing pixel distributions for {len(valid_datasets)} datasets")
@@ -499,8 +568,10 @@ class DatasetAnalyzer:
         colors = plt.cm.tab10(np.linspace(0, 1, len(pixel_data)))
         
         for i, (dataset_name, pixels) in enumerate(pixel_data.items()):
+            # Clean dataset name by removing SMDG- prefix
+            clean_dataset_name = dataset_name.replace('SMDG-', '')
             # Create histogram
-            plt.hist(pixels, bins=50, alpha=0.6, label=dataset_name, 
+            plt.hist(pixels, bins=50, alpha=0.6, label=clean_dataset_name, 
                     color=colors[i], density=True)
         
         plt.xlabel('Normalized Pixel Intensity', fontsize=12)
@@ -524,8 +595,10 @@ class DatasetAnalyzer:
         
         stats_data = []
         for dataset_name, pixels in pixel_data.items():
+            # Clean dataset name by removing SMDG- prefix
+            clean_dataset_name = dataset_name.replace('SMDG-', '')
             stats_data.append({
-                'Dataset': dataset_name,
+                'Dataset': clean_dataset_name,
                 'Mean': np.mean(pixels),
                 'Std': np.std(pixels),
                 'Median': np.median(pixels),
@@ -584,21 +657,26 @@ class DatasetAnalyzer:
             logger.warning(f"Model weights not found at {model_path}. Skipping UMAP analysis.")
             return
         
-        # Filter datasets with sufficient samples
+        # Filter datasets with sufficient samples (changed from 200+ to 100+)
         valid_datasets = []
         for dataset_type, splits in datasets_dict.items():
             for split_name, df in splits.items():
-                if df is not None and not df.empty and len(df) >= 200:
-                    valid_datasets.append((f"{dataset_type}_{split_name}", df))
+                if df is not None and not df.empty and len(df) >= 100:
+                    # Skip SMDG_Unknown datasets
+                    dataset_full_name = f"{dataset_type}_{split_name}"
+                    if 'SMDG_Unknown' not in dataset_full_name and 'SMDG-SMDG_Unknown' not in dataset_full_name:
+                        valid_datasets.append((dataset_full_name, df))
         
         # Also check external datasets
         if hasattr(self, '_external_datasets'):
             for dataset_name, df in self._external_datasets.items():
-                if df is not None and not df.empty and len(df) >= 200:
-                    valid_datasets.append((dataset_name, df))
+                if df is not None and not df.empty and len(df) >= 100:
+                    # Skip SMDG_Unknown datasets
+                    if 'SMDG_Unknown' not in dataset_name and 'SMDG-SMDG_Unknown' not in dataset_name:
+                        valid_datasets.append((dataset_name, df))
         
         if not valid_datasets:
-            logger.warning("No datasets with 200+ samples found for UMAP analysis")
+            logger.warning("No datasets with 100+ samples found for UMAP analysis")
             return
         
         logger.info(f"Creating UMAP visualization for {len(valid_datasets)} datasets")
@@ -732,8 +810,10 @@ class DatasetAnalyzer:
             # Plot by dataset
             for dataset_name in np.unique(datasets_array):
                 mask = datasets_array == dataset_name
+                # Clean dataset name by removing SMDG- prefix for legend
+                clean_dataset_name = dataset_name.replace('SMDG-', '')
                 axes[0].scatter(embedding[mask, 0], embedding[mask, 1], 
-                              c=[dataset_colors[dataset_name]], label=dataset_name, 
+                              c=[dataset_colors[dataset_name]], label=clean_dataset_name, 
                               alpha=0.6, s=20)
             
             axes[0].set_title('UMAP Embeddings by Dataset', fontsize=14, fontweight='bold')
@@ -743,7 +823,7 @@ class DatasetAnalyzer:
             
             # Plot by label (glaucoma vs normal)
             normal_mask = labels_array == 0
-            glaucoma_mask = labels_array == 1
+            glaucoma_mask = labels_array == 1;
             
             axes[1].scatter(embedding[normal_mask, 0], embedding[normal_mask, 1], 
                           c='lightblue', label='Normal', alpha=0.6, s=20)
@@ -796,7 +876,9 @@ class DatasetAnalyzer:
                         axes[i].scatter(dataset_embedding[glaucoma_mask, 0], dataset_embedding[glaucoma_mask, 1], 
                                       c='lightcoral', label='Glaucoma', alpha=0.7, s=25)
                     
-                    axes[i].set_title(f'{dataset_name}', fontweight='bold')
+                    # Clean dataset name by removing SMDG- prefix for title
+                    clean_dataset_name = dataset_name.replace('SMDG-', '')
+                    axes[i].set_title(f'{clean_dataset_name}', fontweight='bold')
                     axes[i].legend()
                     axes[i].set_xlabel('UMAP 1')
                     axes[i].set_ylabel('UMAP 2')
@@ -819,7 +901,385 @@ class DatasetAnalyzer:
             logger.error(f"Failed to create UMAP visualization: {e}")
             import traceback
             traceback.print_exc()
-
+    
+    def calculate_vcdr_metrics(self, df: pd.DataFrame, dataset_name: str, max_samples: int = None):
+        """Calculate vCDR metrics for a dataset using U-Net segmentation."""
+        if self.predictor is None or self.metrics_calculator is None:
+            logger.warning(f"U-Net predictor not available for {dataset_name}. Skipping vCDR analysis.")
+            return None
+        
+        # Use all samples for comprehensive analysis
+        sample_size = len(df) if max_samples is None else min(max_samples, len(df))
+        logger.info(f"Calculating vCDR metrics for {dataset_name} (processing {sample_size} samples)...")
+        
+        if sample_size < 50:
+            logger.warning(f"Dataset {dataset_name} has only {sample_size} samples. Skipping vCDR analysis.")
+            return None
+        
+        # For comprehensive analysis, use all samples (no sampling unless max_samples is specified)
+        if max_samples is not None and sample_size < len(df):
+            # Only sample if explicitly limited by max_samples parameter
+            try:
+                label_col = None
+                for col in ['types', 'label', 'glaucoma', 'diagnosis']:
+                    if col in df.columns:
+                        label_col = col
+                        break
+                
+                if label_col and df[label_col].nunique() >= 2:
+                    _, sample_df = train_test_split(
+                        df, test_size=sample_size, stratify=df[label_col], random_state=42
+                    )
+                else:
+                    sample_df = df.sample(n=sample_size, random_state=42)
+            except:
+                sample_df = df.sample(n=sample_size, random_state=42)
+        else:
+            # Use all samples for comprehensive analysis
+            sample_df = df.copy()
+            sample_size = len(sample_df)
+        
+        results = []
+        processed_count = 0
+        
+        for _, row in tqdm(sample_df.iterrows(), total=len(sample_df), 
+                          desc=f"Processing {dataset_name}"):
+            try:
+                img_path = row.get('image_path', '')
+                if not os.path.exists(img_path):
+                    continue
+                
+                # Load image
+                img = cv2.imread(img_path)
+                if img is None:
+                    continue
+                
+                # Predict disc and cup masks
+                disc_mask, cup_mask = self.predictor.predict(img, refine_smooth=False)
+                
+                # Calculate metrics
+                metrics = self.metrics_calculator.extract_metrics(disc_mask, cup_mask)
+                
+                if metrics and 'vcdr' in metrics:
+                    label = row.get('types', row.get('label', 0))
+                    results.append({
+                        'dataset_name': dataset_name,
+                        'image_name': row.get('names', ''),
+                        'image_path': img_path,
+                        'label': int(label),
+                        'vcdr': metrics['vcdr'],
+                        'hcdr': metrics.get('hcdr', None),
+                        'area_ratio': metrics.get('area_ratio', None)
+                    })
+                    processed_count += 1
+                
+            except Exception as e:
+                logger.debug(f"Failed to process image {img_path}: {e}")
+                continue
+        
+        if processed_count == 0:
+            logger.warning(f"No valid vCDR measurements for {dataset_name}")
+            return None
+        
+        logger.info(f"Successfully processed {processed_count} images for {dataset_name}")
+        return pd.DataFrame(results)
+    
+    def find_optimal_threshold(self, vcdr_values: np.array, labels: np.array):
+        """Find optimal vCDR threshold using ROC curve analysis."""
+        try:
+            # Calculate ROC curve
+            fpr, tpr, thresholds = roc_curve(labels, vcdr_values)
+            auc_score = roc_auc_score(labels, vcdr_values)
+            
+            # Find optimal threshold using Youden's J statistic
+            j_scores = tpr - fpr
+            optimal_idx = np.argmax(j_scores)
+            optimal_threshold = thresholds[optimal_idx]
+            
+            return {
+                'optimal_threshold': optimal_threshold,
+                'auc': auc_score,
+                'sensitivity': tpr[optimal_idx],
+                'specificity': 1 - fpr[optimal_idx],
+                'fpr': fpr,
+                'tpr': tpr,
+                'thresholds': thresholds
+            }
+        except Exception as e:
+            logger.error(f"Failed to calculate optimal threshold: {e}")
+            return None
+    
+    def create_vcdr_analysis(self, datasets_dict: dict, max_samples: int = None):
+        """Perform comprehensive vCDR analysis across all datasets."""
+        if self.predictor is None:
+            logger.warning("U-Net predictor not available. Skipping vCDR analysis.")
+            return
+        
+        logger.info("Starting comprehensive vCDR analysis...")
+        if max_samples is None:
+            logger.info("Processing ALL samples for comprehensive analysis")
+        else:
+            logger.info(f"Processing up to {max_samples} samples per dataset")
+        
+        # Collect all datasets for vCDR analysis
+        all_datasets = []
+        
+        # Training datasets
+        for dataset_type, splits in datasets_dict.items():
+            for split_name, df in splits.items():
+                if df is not None and not df.empty and len(df) >= 100:
+                    dataset_full_name = f"{dataset_type}_{split_name}"
+                    if 'SMDG_Unknown' not in dataset_full_name:
+                        all_datasets.append((dataset_full_name, df))
+        
+        # External datasets
+        if hasattr(self, '_external_datasets'):
+            for dataset_name, df in self._external_datasets.items():
+                if df is not None and not df.empty and len(df) >= 100:
+                    if 'SMDG_Unknown' not in dataset_name:
+                        all_datasets.append((dataset_name, df))
+        
+        if not all_datasets:
+            logger.warning("No suitable datasets found for vCDR analysis")
+            return
+        
+        logger.info(f"Performing vCDR analysis on {len(all_datasets)} datasets")
+        
+        # Process each dataset
+        vcdr_summary_data = []
+        
+        for dataset_name, df in all_datasets:
+            vcdr_df = self.calculate_vcdr_metrics(df, dataset_name, max_samples)
+            
+            if vcdr_df is not None and len(vcdr_df) >= 20:  # Minimum samples for meaningful analysis
+                # Calculate optimal threshold
+                threshold_results = self.find_optimal_threshold(
+                    vcdr_df['vcdr'].values, vcdr_df['label'].values
+                )
+                
+                if threshold_results:
+                    clean_dataset_name = dataset_name.replace('SMDG-', '')
+                    
+                    summary_entry = {
+                        'dataset_name': clean_dataset_name,
+                        'sample_size': len(vcdr_df),
+                        'glaucoma_samples': sum(vcdr_df['label']),
+                        'normal_samples': len(vcdr_df) - sum(vcdr_df['label']),
+                        'vcdr_optimal_threshold': threshold_results['optimal_threshold'],
+                        'auc': threshold_results['auc'],
+                        'sensitivity': threshold_results['sensitivity'],
+                        'specificity': threshold_results['specificity'],
+                        'mean_vcdr_normal': vcdr_df[vcdr_df['label'] == 0]['vcdr'].mean(),
+                        'mean_vcdr_glaucoma': vcdr_df[vcdr_df['label'] == 1]['vcdr'].mean(),
+                        'std_vcdr_normal': vcdr_df[vcdr_df['label'] == 0]['vcdr'].std(),
+                        'std_vcdr_glaucoma': vcdr_df[vcdr_df['label'] == 1]['vcdr'].std()
+                    }
+                    
+                    vcdr_summary_data.append(summary_entry)
+                    
+                    # Store detailed results for plotting
+                    self.vcdr_results.append({
+                        'dataset_name': clean_dataset_name,
+                        'vcdr_df': vcdr_df,
+                        'threshold_results': threshold_results
+                    })
+        
+        if not vcdr_summary_data:
+            logger.warning("No vCDR analysis results generated")
+            return
+        
+        # Create summary table
+        vcdr_summary_df = pd.DataFrame(vcdr_summary_data)
+        
+        # Save summary table
+        csv_path = os.path.join(self.output_dir, f'vcdr_analysis_summary_{self.timestamp}.csv')
+        vcdr_summary_df.to_csv(csv_path, index=False)
+        logger.info(f"vCDR analysis summary saved to: {csv_path}")
+        
+        # Create visualizations
+        self._create_vcdr_distribution_plots()
+        self._create_vcdr_summary_table(vcdr_summary_df)
+        
+        logger.info("vCDR analysis completed successfully")
+    
+    def _create_vcdr_distribution_plots(self):
+        """Create vCDR distribution plots for each dataset with optimal thresholds."""
+        if not self.vcdr_results:
+            return
+        
+        # Create individual distribution plots
+        n_datasets = len(self.vcdr_results)
+        cols = min(3, n_datasets)
+        rows = (n_datasets + cols - 1) // cols
+        
+        fig, axes = plt.subplots(rows, cols, figsize=(6*cols, 5*rows))
+        if n_datasets == 1:
+            axes = [axes]
+        elif rows == 1:
+            axes = axes if n_datasets > 1 else [axes]
+        else:
+            axes = axes.flatten()
+        
+        for i, result in enumerate(self.vcdr_results):
+            if i >= len(axes):
+                break
+                
+            dataset_name = result['dataset_name']
+            vcdr_df = result['vcdr_df']
+            threshold_results = result['threshold_results']
+            
+            ax = axes[i]
+            
+            # Plot distributions
+            normal_vcdr = vcdr_df[vcdr_df['label'] == 0]['vcdr']
+            glaucoma_vcdr = vcdr_df[vcdr_df['label'] == 1]['vcdr']
+            
+            ax.hist(normal_vcdr, bins=20, alpha=0.6, label='Normal', color='lightblue', density=True)
+            ax.hist(glaucoma_vcdr, bins=20, alpha=0.6, label='Glaucoma', color='lightcoral', density=True)
+            
+            # Add optimal threshold line
+            ax.axvline(threshold_results['optimal_threshold'], color='red', linestyle='--', 
+                      linewidth=2, label=f'Optimal Threshold: {threshold_results["optimal_threshold"]:.3f}')
+            
+            ax.set_xlabel('vCDR')
+            ax.set_ylabel('Density')
+            ax.set_title(f'{dataset_name}\nAUC: {threshold_results["auc"]:.3f}, n={len(vcdr_df)}')
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+        
+        # Hide unused subplots
+        for i in range(len(self.vcdr_results), len(axes)):
+            axes[i].set_visible(False)
+        
+        plt.suptitle('vCDR Distribution Analysis with Optimal Thresholds', 
+                    fontsize=16, fontweight='bold')
+        plt.tight_layout()
+        
+        # Save plot
+        plot_path = os.path.join(self.output_dir, f'vcdr_distributions_{self.timestamp}.png')
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        logger.info(f"vCDR distribution plots saved to: {plot_path}")
+        
+        # Create combined ROC curves
+        self._create_roc_curves_plot()
+    
+    def _create_roc_curves_plot(self):
+        """Create ROC curves for all datasets."""
+        if not self.vcdr_results:
+            return
+        
+        plt.figure(figsize=(10, 8))
+        
+        colors = plt.cm.tab10(np.linspace(0, 1, len(self.vcdr_results)))
+        
+        for i, result in enumerate(self.vcdr_results):
+            dataset_name = result['dataset_name']
+            threshold_results = result['threshold_results']
+            
+            plt.plot(threshold_results['fpr'], threshold_results['tpr'], 
+                    color=colors[i], linewidth=2,
+                    label=f'{dataset_name} (AUC = {threshold_results["auc"]:.3f})')
+        
+        # Add diagonal line
+        plt.plot([0, 1], [0, 1], 'k--', alpha=0.5, label='Random Classifier')
+        
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('ROC Curves for vCDR-based Glaucoma Classification', fontsize=14, fontweight='bold')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        # Save plot
+        roc_path = os.path.join(self.output_dir, f'vcdr_roc_curves_{self.timestamp}.png')
+        plt.savefig(roc_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        logger.info(f"ROC curves plot saved to: {roc_path}")
+    
+    def _create_vcdr_summary_table(self, vcdr_summary_df: pd.DataFrame):
+        """Create visual summary table for vCDR analysis."""
+        # Prepare data for display
+        display_df = vcdr_summary_df.copy()
+        
+        # Format columns for display
+        display_df['AUC'] = display_df['auc'].round(3)
+        display_df['Threshold'] = display_df['vcdr_optimal_threshold'].round(3)
+        display_df['Sensitivity'] = (display_df['sensitivity'] * 100).round(1).astype(str) + '%'
+        display_df['Specificity'] = (display_df['specificity'] * 100).round(1).astype(str) + '%'
+        display_df['Normal vCDR'] = (display_df['mean_vcdr_normal'].round(3).astype(str) + '±' + 
+                                   display_df['std_vcdr_normal'].round(3).astype(str))
+        display_df['Glaucoma vCDR'] = (display_df['mean_vcdr_glaucoma'].round(3).astype(str) + '±' + 
+                                     display_df['std_vcdr_glaucoma'].round(3).astype(str))
+        
+        # Select columns for display
+        display_cols = {
+            'dataset_name': 'Dataset',
+            'sample_size': 'Sample\nSize',
+            'Threshold': 'Optimal\nThreshold',
+            'AUC': 'AUC',
+            'Sensitivity': 'Sensitivity',
+            'Specificity': 'Specificity',
+            'Normal vCDR': 'Normal vCDR\n(Mean±SD)',
+            'Glaucoma vCDR': 'Glaucoma vCDR\n(Mean±SD)'
+        }
+        
+        plot_df = display_df[list(display_cols.keys())].rename(columns=display_cols)
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(16, max(6, len(plot_df) * 0.4 + 2)))
+        ax.axis('tight')
+        ax.axis('off')
+        
+        # Create table
+        table = ax.table(
+            cellText=plot_df.values,
+            colLabels=plot_df.columns,
+            cellLoc='center',
+            loc='center',
+            bbox=[0, 0, 1, 1]
+        )
+        
+        # Style the table
+        table.auto_set_font_size(False)
+        table.set_fontsize(9)
+        table.scale(1, 2)
+        
+        # Header styling
+        for i in range(len(plot_df.columns)):
+            table[(0, i)].set_facecolor('#2E86AB')
+            table[(0, i)].set_text_props(weight='bold', color='white')
+            table[(0, i)].set_height(0.12)
+        
+        # Row styling with AUC-based coloring
+        for i in range(1, len(plot_df) + 1):
+            auc_val = float(plot_df.iloc[i-1]['AUC'])
+            if auc_val >= 0.8:
+                row_color = '#E8F5E8'  # Light green for good AUC
+            elif auc_val >= 0.7:
+                row_color = '#FFF8DC'  # Light yellow for moderate AUC
+            else:
+                row_color = '#FFE4E1'  # Light red for poor AUC
+                
+            for j in range(len(plot_df.columns)):
+                table[(i, j)].set_facecolor(row_color)
+                table[(i, j)].set_height(0.1)
+        
+        # Title
+        plt.suptitle('vCDR Analysis Summary - Optimal Thresholds and Performance', 
+                    fontsize=16, fontweight='bold', y=0.95)
+        plt.title(f'Generated: {self.timestamp}', fontsize=10, color='gray', y=0.88)
+        
+        # Save plot
+        table_path = os.path.join(self.output_dir, f'vcdr_summary_table_{self.timestamp}.png')
+        plt.savefig(table_path, dpi=300, bbox_inches='tight', facecolor='white')
+        plt.close()
+        
+        logger.info(f"vCDR summary table saved to: {table_path}")
+    
 
 def load_training_datasets(args: argparse.Namespace) -> dict:
     """Load training, validation, and test datasets."""
@@ -961,7 +1421,6 @@ def load_external_datasets(args: argparse.Namespace) -> dict:
             base_data_dir=args.base_data_root, raw_dir_name=RAW_DIR_NAME_CONST,
             processed_dir_name=PROCESSED_DIR_NAME_CONST
         )
-    
     try:
         external_datasets = load_external_test_data(
             smdg_metadata_file_raw=args.smdg_metadata_file_raw,
@@ -999,8 +1458,9 @@ def main(args: argparse.Namespace):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = os.path.join(args.output_dir, f"dataset_analysis_{timestamp}")
     
-    # Initialize analyzer
-    analyzer = DatasetAnalyzer(output_dir)
+    # Initialize analyzer with U-Net model path
+    unet_model_path = args.unet_model_path if hasattr(args, 'unet_model_path') else None
+    analyzer = DatasetAnalyzer(output_dir, unet_model_path)
     
     # Load training datasets
     training_datasets = load_training_datasets(args)
@@ -1038,6 +1498,13 @@ def main(args: argparse.Namespace):
         model_path = args.model_path if args.model_path else r'D:\glaucoma\models\VFM_Fundus_weights.pth'
         analyzer.create_umap_embeddings_visualization(training_datasets, model_path)
     
+    # Create vCDR analysis if U-Net model is available
+    if args.vcdr_analysis and analyzer.predictor is not None:
+        logger.info("\n--- Creating vCDR Analysis ---")
+        analyzer.create_vcdr_analysis(training_datasets, args.vcdr_max_samples)
+    elif args.vcdr_analysis:
+        logger.warning("vCDR analysis requested but U-Net model not available")
+    
     # Save detailed analysis as JSON
     json_path = os.path.join(output_dir, f'detailed_analysis_{analyzer.timestamp}.json')
     with open(json_path, 'w') as f:
@@ -1070,16 +1537,34 @@ def main(args: argparse.Namespace):
                   f"{row['glaucoma_prevalence']:.1%} prevalence")
     
     # Print info about advanced analyses
-    if args.pixel_analysis or args.umap_analysis:
+    analyses_completed = []
+    if args.pixel_analysis:
+        analyses_completed.append("✓ Pixel distribution analysis")
+    if args.umap_analysis:
+        analyses_completed.append("✓ UMAP embeddings visualization")
+    if args.vcdr_analysis and analyzer.predictor is not None:
+        analyses_completed.append("✓ vCDR analysis with optimal thresholds")
+    
+    if analyses_completed:
         print(f"\nAdvanced analyses completed:")
-        if args.pixel_analysis:
-            print("  ✓ Pixel distribution analysis")
-        if args.umap_analysis:
-            print("  ✓ UMAP embeddings visualization")
+        for analysis in analyses_completed:
+            print(f"  {analysis}")
     else:
         print(f"\nTo enable advanced analysis, use:")
         print("  --pixel_analysis    for pixel distribution comparison")
         print("  --umap_analysis     for UMAP embeddings visualization")
+        print("  --vcdr_analysis     for vCDR analysis with optimal thresholds")
+    
+    # Print vCDR analysis summary if available
+    if hasattr(analyzer, 'vcdr_results') and analyzer.vcdr_results:
+        print(f"\nvCDR Analysis Summary:")
+        print(f"  Datasets analyzed: {len(analyzer.vcdr_results)}")
+        for result in analyzer.vcdr_results:
+            dataset_name = result['dataset_name']
+            auc = result['threshold_results']['auc']
+            threshold = result['threshold_results']['optimal_threshold']
+            sample_size = len(result['vcdr_df'])
+            print(f"  {dataset_name}: AUC={auc:.3f}, Threshold={threshold:.3f}, n={sample_size}")
     
     print(f"\nDetailed results saved to: {output_dir}")
     print("="*80)
@@ -1150,18 +1635,26 @@ if __name__ == "__main__":
                        help="Random seed for reproducible sampling")
     
     # Advanced analysis options
-    parser.add_argument('--pixel_analysis', action='store_true', default=True,
+    parser.add_argument('--pixel_analysis', action='store_true', default=False,
                        help="Enable pixel distribution analysis (requires datasets with 200+ samples)")
-    parser.add_argument('--umap_analysis', action='store_true', default=True,
+    parser.add_argument('--umap_analysis', action='store_true', default=False,
                        help="Enable UMAP embeddings visualization using pre-trained model")
+    parser.add_argument('--vcdr_analysis', action='store_true', default=True,
+                       help="Enable vCDR analysis using U-Net segmentation with optimal threshold calculation")
+    parser.add_argument('--vcdr_max_samples', type=int, default=None,
+                       help="Maximum samples per dataset for vCDR analysis (default: None = all samples)")
     parser.add_argument('--model_path', type=str, default=r'D:\glaucoma\models\VFM_Fundus_weights.pth',
                        help="Path to pre-trained model weights for UMAP analysis")
+    parser.add_argument('--unet_model_path', type=str, 
+                       default=r'D:\glaucoma\models\best_multitask_model_epoch_25.pth',
+                       help="Path to U-Net model weights for vCDR analysis")
     
     # Dataset selection
     parser.add_argument('--eval_papilla', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--eval_chaksu', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--eval_acrima', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--eval_hygd', action=argparse.BooleanOptionalAction, default=True)
+
     
     args = parser.parse_args()
     

@@ -1048,7 +1048,7 @@ class MultiSourceEvaluator:
             # Save plot
             plot_path = output_dir / f'subgroup_analysis_{model_name}_{dataset_name}.png'
             plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-            plt.show()
+            plt.close()  # Close the figure to free memory
             
             self.logger.info(f"Subgroup analysis plot saved to {plot_path}")
             
