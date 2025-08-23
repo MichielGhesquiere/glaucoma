@@ -19,7 +19,7 @@ Fundus photography provides a non-invasive method for examining the optic nerve 
 - **Retinal Nerve Fiber Layer (RNFL)**: Changes in thickness and appearance
 - **Vascular Changes**: Alterations in retinal blood vessel patterns
 
-![Fundus Photography in Glaucoma Detection](Glaucoma-fundus-explained.jpg)
+![Fundus Photography in Glaucoma Detection](figs/Glaucoma-fundus-explained.jpg)
 
 Source: [pfecbackoffice.info](https://pfecbackoffice.info/eye-encyclopedia/glaucoma/)*
 
@@ -36,7 +36,7 @@ Traditional machine learning approaches face significant challenges in clinical 
 
 Our framework leverages multiple publicly available datasets to ensure robust training and comprehensive evaluation:
 
-![Dataset Distribution Overview](dataset_analysis_results/dataset_analysis_20250626_190413/sample_distribution_20250626_190413.png)
+![Dataset Distribution Overview](figs/sample_distribution_20250626_190413.png)
 
 *Figure: Distribution of samples across different datasets used in our multi-source domain adaptation framework, showing the diversity in data sources and class balance.*
 
@@ -145,7 +145,7 @@ Our framework implements three sophisticated fine-tuning approaches:
 
 ## 4. Domain Adaptation Techniques
 
-![UMAP Embeddings Analysis](dataset_analysis_results/dataset_analysis_20250626_190413/umap_embeddings_20250626_190413.png)
+![UMAP Embeddings Analysis](figs/umap_embeddings_20250626_190413.png)
 
 *Figure: UMAP visualization of learned embeddings showing how feature representations cluster by dataset rather than class, highlighting the significant impact of domain shift on feature distribution. This demonstrates the critical need for domain adaptation techniques.*
 
@@ -320,7 +320,7 @@ def test_time_adapt(self, x):
 
 ### 5.2 Evaluation Metrics
 
-![Comprehensive Model Comparison](comprehensive_model_comparison.png)
+![Comprehensive Model Comparison](figs/comprehensive_model_comparison.png)
 
 *Figure: Comprehensive comparison between VFM (Vision Foundation Model) and ResNet18 architectures across multiple evaluation metrics including AUC, Expected Calibration Error (ECE), and other performance indicators. This comparison demonstrates the superior performance and calibration quality of the VFM approach.*
 
