@@ -36,6 +36,10 @@ Traditional machine learning approaches face significant challenges in clinical 
 
 Our framework leverages multiple publicly available datasets to ensure robust training and comprehensive evaluation:
 
+![Dataset Distribution Overview](dataset_analysis_results/dataset_analysis_20250626_190413/sample_distribution_20250626_190413.png)
+
+*Figure: Distribution of samples across different datasets used in our multi-source domain adaptation framework, showing the diversity in data sources and class balance.*
+
 ### 2.1 SMDG-19
 
 ### 2.2 CHAKSU Multi-Camera Dataset
@@ -140,6 +144,10 @@ Our framework implements three sophisticated fine-tuning approaches:
 - **Implementation**: Custom optimizer with layer-specific learning rates
 
 ## 4. Domain Adaptation Techniques
+
+![UMAP Embeddings Analysis](dataset_analysis_results/dataset_analysis_20250626_190413/umap_embeddings_20250626_190413.png)
+
+*Figure: UMAP visualization of learned embeddings showing how feature representations cluster by dataset rather than class, highlighting the significant impact of domain shift on feature distribution. This demonstrates the critical need for domain adaptation techniques.*
 
 Our framework implements a comprehensive suite of domain adaptation methods to address distribution shift and improve generalization:
 
@@ -312,6 +320,10 @@ def test_time_adapt(self, x):
 
 ### 5.2 Evaluation Metrics
 
+![Comprehensive Model Comparison](comprehensive_model_comparison.png)
+
+*Figure: Comprehensive comparison between VFM (Vision Foundation Model) and ResNet18 architectures across multiple evaluation metrics including AUC, Expected Calibration Error (ECE), and other performance indicators. This comparison demonstrates the superior performance and calibration quality of the VFM approach.*
+
 #### 5.2.1 Classification Performance
 - **Area Under Curve (AUC)**: Primary performance metric
 - **Sensitivity at 95% Specificity**: Clinically relevant threshold
@@ -322,6 +334,8 @@ def test_time_adapt(self, x):
 - **Expected Calibration Error (ECE)**: Reliability of confidence estimates
 - **Brier Score**: Proper scoring rule for probabilistic predictions
 - **Reliability Diagrams**: Visual assessment of calibration quality
+
+
 
 #### 5.2.3 Fairness Metrics
 - **Demographic Parity**: Equal positive prediction rates across groups
