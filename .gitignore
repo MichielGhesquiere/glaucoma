@@ -63,6 +63,15 @@ wheels/
 .installed.cfg
 *.egg
 
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Code quality tools
+.mypy_cache/
+.ruff_cache/
+
 # Virtual environment
 venv/
 env/
