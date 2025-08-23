@@ -1,4 +1,4 @@
-# Multi-Source Domain Adaptation for Glaucoma Classification: A Comprehensive Research Framework
+# Multi-Source Domain Adaptation for Glaucoma Classification:
 
 ## Abstract
 
