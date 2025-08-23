@@ -1,8 +1,8 @@
-# Multi-Source Domain Adaptation for Glaucoma Classification:
+# Multi-Source Domain Adaptation for Glaucoma Classification
 
 ## Abstract
 
-This repository presents a framework for multi-source domain adaptation in automated glaucoma detection from fundus photography. Our approach addresses the critical challenge of domain shift across different imaging devices, demographics, and clinical settings by leveraging Vision Foundation Models (VFM) pre-trained with self-supervised learning and implementing advanced domain adaptation techniques.
+This repository presents a framework for multi-source domain adaptation in automated glaucoma detection from fundus photography. Our approach addresses the critical challenge of domain shift across different imaging devices, demographics, and clinical settings by leveraging Vision Foundation Models (VFM) pre-trained with self-supervised learning, using multi-source domain fine-tuning and implementing domain adaptation techniques.
 
 ## 1. Introduction to Glaucoma
 
